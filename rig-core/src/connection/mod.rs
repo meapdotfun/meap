@@ -47,10 +47,12 @@ mod tls;
 mod rate_limit;
 mod metrics;
 mod balancer;
+mod circuit;
 
 pub use rate_limit::{RateLimiter, RateLimitConfig};
 pub use metrics::{ConnectionMetrics, ConnectionStats};
 pub use balancer::{LoadBalancer, BalancerConfig, BalanceStrategy};
+pub use circuit::{CircuitBreaker, CircuitState};
 
 /// Duration between heartbeat messages
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -100,6 +102,8 @@ pub struct Connection {
     config: ConnectionConfig,
     /// Connection metrics
     metrics: ConnectionMetrics,
+    /// Circuit breaker for handling connection failures
+    circuit_breaker: CircuitBreaker,
 }
 
 impl Connection {
@@ -112,17 +116,32 @@ impl Connection {
             status: ConnectionStatus::Connected,
             config,
             metrics: ConnectionMetrics::new(),
+            circuit_breaker: CircuitBreaker::new(3), // Open after 3 failures
         }
     }
 
     /// Sends a message through the connection.
     pub async fn send(&mut self, message: Message) -> Result<()> {
+        if !self.circuit_breaker.allow_request() {
+            return Err(Error::Connection("Circuit breaker is open".into()));
+        }
+
         let start = Instant::now();
         let text = serde_json::to_string(&message)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
-        self.tx.send(WsMessage::Text(text)).await
-            .map_err(|e| Error::Connection(format!("Failed to send message: {}", e)))
+        match self.tx.send(WsMessage::Text(text)).await {
+            Ok(_) => {
+                self.circuit_breaker.record_success();
+                self.metrics.record_sent();
+                self.metrics.record_latency(start.elapsed());
+                Ok(())
+            }
+            Err(e) => {
+                self.circuit_breaker.record_failure();
+                Err(Error::Connection(format!("Failed to send message: {}", e)))
+            }
+        }
     }
 
     /// Updates the heartbeat timestamp.
