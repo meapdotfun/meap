@@ -39,7 +39,10 @@
 //! ```
 
 mod types;
+mod stream;
+
 pub use types::*;
+pub use stream::{StreamChunk, StreamControl, StreamSender, StreamReceiver};
 
 use crate::error::Result;
 use async_trait::async_trait;
@@ -135,6 +138,22 @@ pub trait Protocol: Send + Sync {
     /// * `Ok(())` if handling succeeds
     /// * `Error` if handling fails
     async fn handle_stream(&self, message: Message) -> Result<()>;
+
+    /// Initializes a new outgoing stream
+    async fn start_stream(&self, metadata: Option<serde_json::Value>) -> Result<StreamSender> {
+        let (sender, _) = StreamSender::new(32);
+        Ok(sender)
+    }
+
+    /// Handles an incoming stream
+    async fn handle_stream(&self, control: StreamControl) -> Result<Option<StreamReceiver>> {
+        Ok(None)
+    }
+
+    /// Processes a stream chunk
+    async fn process_chunk(&self, chunk: StreamChunk) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
