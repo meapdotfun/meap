@@ -45,8 +45,10 @@ use tracing::{debug, error, info, warn};
 
 mod tls;
 mod rate_limit;
+mod metrics;
 
 pub use rate_limit::{RateLimiter, RateLimitConfig};
+pub use metrics::{ConnectionMetrics, ConnectionStats};
 
 /// Duration between heartbeat messages
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -92,6 +94,8 @@ pub struct Connection {
     status: ConnectionStatus,
     /// Connection configuration
     config: ConnectionConfig,
+    /// Connection metrics
+    metrics: ConnectionMetrics,
 }
 
 impl Connection {
@@ -103,11 +107,13 @@ impl Connection {
             tx,
             status: ConnectionStatus::Connected,
             config,
+            metrics: ConnectionMetrics::new(),
         }
     }
 
     /// Sends a message through the connection.
     pub async fn send(&mut self, message: Message) -> Result<()> {
+        let start = Instant::now();
         let text = serde_json::to_string(&message)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
