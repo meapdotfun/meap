@@ -9,9 +9,10 @@ use crossterm::{
 use meap_core::{
     agent::AgentStatus,
     connection::ConnectionPool,
-    protocol::Message,
+    protocol::{Message, MessageType},
     error::Result,
 };
+use monitor::{MessageFilter, MessageMonitor};
 use std::{
     io,
     sync::Arc,
@@ -33,6 +34,9 @@ struct App {
     messages: Arc<RwLock<Vec<Message>>>,
     selected_agent: Option<String>,
     show_help: bool,
+    show_filter_menu: bool,
+    filter: MessageFilter,
+    monitor: Option<MessageMonitor>,
 }
 
 impl App {
@@ -42,6 +46,13 @@ impl App {
             messages: Arc::new(RwLock::new(Vec::new())),
             selected_agent: None,
             show_help: false,
+            show_filter_menu: false,
+            filter: MessageFilter {
+                agent_id: None,
+                message_type: None,
+                content_filter: None,
+            },
+            monitor: None,
         }
     }
 
@@ -50,6 +61,13 @@ impl App {
         messages.push(message);
         if messages.len() > 100 {
             messages.remove(0);
+        }
+    }
+
+    /// Updates the message filter
+    pub fn set_filter(&self, filter: MessageFilter) {
+        if let Some(monitor) = &self.monitor {
+            monitor.set_filter(filter);
         }
     }
 }
@@ -71,6 +89,10 @@ async fn main() -> Result<()> {
     };
     let connection_pool = Arc::new(ConnectionPool::new(config));
     let app = Arc::new(App::new(connection_pool));
+
+    // Create message monitor
+    let monitor = MessageMonitor::new(app.clone());
+    monitor.start().await?;
 
     // Start UI update loop
     let app_clone = app.clone();
@@ -112,6 +134,7 @@ async fn ui_loop<B: tui::backend::Backend>(
                 Constraint::Length(3),  // Help
                 Constraint::Length(10), // Agents
                 Constraint::Min(0),     // Messages
+                Constraint::Length(3),  // Filter Status
             ])
             .split(f.size());
 
@@ -174,6 +197,19 @@ async fn ui_loop<B: tui::backend::Backend>(
         let messages_list = List::new(message_items)
             .block(Block::default().borders(Borders::ALL).title("Messages"));
         f.render_widget(messages_list, chunks[2]);
+
+        // Add filter status
+        let filter_status = format!(
+            "Filter: {}",
+            if app.filter.agent_id.is_some() || app.filter.message_type.is_some() || app.filter.content_filter.is_some() {
+                "Active"
+            } else {
+                "None"
+            }
+        );
+        let filter_text = Paragraph::new(filter_status)
+            .block(Block::default().borders(Borders::ALL).title("Filter Status"));
+        f.render_widget(filter_text, chunks[3]);
     })?;
 
     if event::poll(Duration::from_millis(100))? {
@@ -181,6 +217,10 @@ async fn ui_loop<B: tui::backend::Backend>(
             match key.code {
                 KeyCode::Char('q') => return Err(io::Error::new(io::ErrorKind::Other, "quit")),
                 KeyCode::Char('h') => app.show_help = !app.show_help,
+                KeyCode::Char('f') => {
+                    // Toggle filter menu
+                    app.show_filter_menu = !app.show_filter_menu;
+                }
                 _ => {}
             }
         }
