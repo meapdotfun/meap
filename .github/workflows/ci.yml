@@ -10,29 +10,12 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test
+  check:
+    name: Check
     runs-on: ubuntu-latest
-    services:
-      mongodb:
-        image: mongo:latest
-        ports:
-          - 27017:27017
-      qdrant:
-        image: qdrant/qdrant:latest
-        ports:
-          - 6333:6333
-          - 6334:6334
-      neo4j:
-        image: neo4j:latest
-        env:
-          NEO4J_AUTH: neo4j/password
-        ports:
-          - 7687:7687
-
     steps:
       - uses: actions/checkout@v3
-
+      
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -62,14 +45,55 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  test:
+    name: Test
+    needs: check
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          - 6334:6334
+      neo4j:
+        image: neo4j:latest
+        env:
+          NEO4J_AUTH: neo4j/password
+        ports:
+          - 7687:7687
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --all-features
 
+      - name: Generate coverage report
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '--ignore-tests'
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
   build:
     name: Build
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
