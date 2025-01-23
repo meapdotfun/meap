@@ -10,6 +10,7 @@ use meap_core::{
     protocol::Protocol,
     security::{SecurityConfig, AuthMethod, TlsConfig},
 };
+use commands::{CliState, self};
 use std::time::Duration;
 use tracing::{info, error};
 
@@ -104,6 +105,10 @@ async fn main() {
         buffer_size: 32,
     };
 
+    let state = CliState::new(config, None)
+        .await
+        .expect("Failed to initialize CLI state");
+
     match cli.command {
         Commands::Create { id, capabilities, tls, cert, key } => {
             info!("Creating agent {} with capabilities: {}", id, capabilities);
@@ -130,37 +135,38 @@ async fn main() {
                 None
             };
 
-            // TODO: Create and store agent
-            info!("Agent created successfully");
+            if let Err(e) = commands::create_agent(&state, id, caps, None).await {
+                error!("Failed to create agent: {}", e);
+            }
         }
 
         Commands::Connect { url, token } => {
-            info!("Connecting to MEAP server at {}", url);
-            if let Some(token) = token {
-                info!("Using authentication token");
+            if let Err(e) = commands::connect_agent(&state, "default".to_string(), url, token).await {
+                error!("Failed to connect: {}", e);
             }
-            // TODO: Implement connection logic
         }
 
         Commands::Send { to, content } => {
-            info!("Sending message to {}", to);
             match serde_json::from_str(&content) {
                 Ok(json) => {
-                    // TODO: Implement message sending
-                    info!("Message sent successfully");
+                    if let Err(e) = commands::send_message(&state, "cli".to_string(), to, json).await {
+                        error!("Failed to send message: {}", e);
+                    }
                 }
                 Err(e) => error!("Invalid JSON content: {}", e),
             }
         }
 
         Commands::List => {
-            info!("Listing active agents");
-            // TODO: Implement agent listing
+            if let Err(e) = commands::list_agents(&state).await {
+                error!("Failed to list agents: {}", e);
+            }
         }
 
         Commands::Status { id } => {
-            info!("Checking status for agent {}", id);
-            // TODO: Implement status check
+            if let Err(e) = commands::check_status(&state, id).await {
+                error!("Failed to check status: {}", e);
+            }
         }
     }
 }
