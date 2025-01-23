@@ -11,7 +11,7 @@ pub mod error;
 pub use agent::{Agent, AgentCapability, AgentStatus};
 pub use protocol::{Message, MessageType, Protocol};
 pub use error::{Error, Result};
-pub use security::SecurityManager;
+pub use security::{SecurityManager, SecurityConfig, AuthMethod};
 
 // Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

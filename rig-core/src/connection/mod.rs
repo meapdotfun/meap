@@ -1,3 +1,31 @@
+//! Connection module handles WebSocket connections and connection pooling.
+//! 
+//! This module provides functionality for:
+//! - Managing WebSocket connections
+//! - Connection pooling and lifecycle management
+//! - Heartbeat monitoring
+//! - Automatic reconnection
+//! 
+//! # Examples
+//! 
+//! ```rust,no_run
+//! use meap_core::connection::{ConnectionConfig, ConnectionPool};
+//! use std::time::Duration;
+//! 
+//! # async fn example() {
+//! let config = ConnectionConfig {
+//!     max_reconnects: 3,
+//!     reconnect_delay: Duration::from_secs(1),
+//!     buffer_size: 32,
+//! };
+//! 
+//! let pool = ConnectionPool::new(config);
+//! pool.add_connection("agent1".to_string(), "ws://localhost:8080".to_string())
+//!     .await
+//!     .unwrap();
+//! # }
+//! ```
+
 use crate::error::{Error, Result};
 use crate::protocol::{Message, MessageType};
 use futures::{SinkExt, StreamExt};
@@ -13,34 +41,52 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, warn};
 
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
-const CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
+/// Duration between heartbeat messages
+pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+/// Maximum time to wait for a heartbeat response
+pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Debug)]
-pub struct Connection {
-    id: String,
-    last_heartbeat: Instant,
-    tx: mpsc::Sender<WsMessage>,
-    status: ConnectionStatus,
-    config: ConnectionConfig,
-}
-
+/// Configuration for connection behavior.
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
+    /// Maximum number of reconnection attempts
     pub max_reconnects: u32,
+    /// Delay between reconnection attempts
     pub reconnect_delay: Duration,
+    /// Size of message buffers
     pub buffer_size: usize,
 }
 
+/// Status of a connection.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionStatus {
+    /// Connection is active and healthy
     Connected,
+    /// Connection has been lost
     Disconnected,
+    /// Attempting to reconnect
     Reconnecting { attempts: u32 },
+    /// Connection has permanently failed
     Failed,
 }
 
+/// Represents a single WebSocket connection.
+#[derive(Debug)]
+pub struct Connection {
+    /// Unique identifier for the connection
+    id: String,
+    /// Time of last received heartbeat
+    last_heartbeat: Instant,
+    /// Channel for sending messages
+    tx: mpsc::Sender<WsMessage>,
+    /// Current connection status
+    status: ConnectionStatus,
+    /// Connection configuration
+    config: ConnectionConfig,
+}
+
 impl Connection {
+    /// Creates a new connection with the given configuration.
     pub fn new(id: String, tx: mpsc::Sender<WsMessage>, config: ConnectionConfig) -> Self {
         Self {
             id,
@@ -51,6 +97,7 @@ impl Connection {
         }
     }
 
+    /// Sends a message through the connection.
     pub async fn send(&mut self, message: Message) -> Result<()> {
         let text = serde_json::to_string(&message)
             .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -59,21 +106,27 @@ impl Connection {
             .map_err(|e| Error::Connection(format!("Failed to send message: {}", e)))
     }
 
+    /// Updates the heartbeat timestamp.
     pub fn update_heartbeat(&mut self) {
         self.last_heartbeat = Instant::now();
     }
 
+    /// Checks if the connection is still alive based on heartbeat.
     pub fn is_alive(&self) -> bool {
         self.last_heartbeat.elapsed() < CONNECTION_TIMEOUT
     }
 }
 
+/// Manages a pool of WebSocket connections.
 pub struct ConnectionPool {
+    /// Active connections
     connections: Arc<RwLock<HashMap<String, Connection>>>,
+    /// Connection configuration
     config: ConnectionConfig,
 }
 
 impl ConnectionPool {
+    /// Creates a new connection pool with the given configuration.
     pub fn new(config: ConnectionConfig) -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -81,6 +134,7 @@ impl ConnectionPool {
         }
     }
 
+    /// Adds a new connection to the pool.
     pub async fn add_connection(&self, id: String, url: String) -> Result<()> {
         let (ws_stream, _) = connect_async(url).await
             .map_err(|e| Error::Connection(format!("Failed to connect: {}", e)))?;
@@ -91,7 +145,7 @@ impl ConnectionPool {
         let connection = Connection::new(id.clone(), tx, self.config.clone());
         
         let mut connections = self.connections.write().await;
-        connections.insert(id, connection);
+        connections.insert(id.clone(), connection);
 
         // Spawn connection handler tasks
         self.spawn_message_handler(read, id.clone());
@@ -100,6 +154,7 @@ impl ConnectionPool {
         Ok(())
     }
 
+    /// Spawns a task to handle incoming messages.
     fn spawn_message_handler(
         &self,
         mut read: impl StreamExt<Item = Result<WsMessage, tokio_tungstenite::tungstenite::Error>> + Send + 'static,
@@ -133,6 +188,7 @@ impl ConnectionPool {
         });
     }
 
+    /// Spawns a task to handle outgoing messages.
     fn spawn_writer_handler(
         &self,
         mut write: impl SinkExt<WsMessage> + Send + 'static,
