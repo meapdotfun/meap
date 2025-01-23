@@ -66,6 +66,10 @@ pub enum Error {
     /// Catch-all for other errors
     #[error(transparent)]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
+
+    /// Version mismatch errors
+    #[error("Version mismatch: {0}")]
+    VersionMismatch(String),
 }
 
 /// Convenience type alias for Results with MEAP errors.

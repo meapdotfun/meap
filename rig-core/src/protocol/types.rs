@@ -6,9 +6,41 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+use std::fmt;
+
+/// Protocol version information
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ProtocolVersion {
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+}
+
+impl ProtocolVersion {
+    pub const CURRENT: ProtocolVersion = ProtocolVersion {
+        major: 0,
+        minor: 1,
+        patch: 0,
+    };
+
+    pub fn new(major: u16, minor: u16, patch: u16) -> Self {
+        Self { major, minor, patch }
+    }
+
+    pub fn is_compatible(&self, other: &ProtocolVersion) -> bool {
+        // Major version must match, minor must be >= required
+        self.major == other.major && self.minor >= other.minor
+    }
+}
+
+impl fmt::Display for ProtocolVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
 
 /// Represents different types of messages in the protocol.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MessageType {
     /// Request messages expect a response
     Request,
@@ -24,6 +56,9 @@ pub enum MessageType {
     Discovery,
     /// Registration messages are used for agent registration
     Registration,
+    /// Version check messages are used for version compatibility checks
+    #[serde(rename = "version_check")]
+    VersionCheck,
 }
 
 /// Core message structure used throughout the protocol.
@@ -44,7 +79,9 @@ pub struct Message {
     /// Optional correlation ID for request/response pairs
     pub correlation_id: Option<String>,
     /// Optional metadata as JSON
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<serde_json::Map<String, serde_json::Value>>,
+    /// Protocol version of the message
+    pub protocol_version: ProtocolVersion,
 }
 
 impl Message {
@@ -73,6 +110,7 @@ impl Message {
                 .as_secs(),
             correlation_id: None,
             metadata: None,
+            protocol_version: ProtocolVersion::CURRENT,
         }
     }
 
@@ -83,9 +121,23 @@ impl Message {
     }
 
     /// Adds metadata to the message.
-    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+    pub fn with_metadata(mut self, metadata: serde_json::Map<String, serde_json::Value>) -> Self {
         self.metadata = Some(metadata);
         self
+    }
+
+    /// Creates a version check response message.
+    pub fn version_check_response(&self, compatible: bool) -> Self {
+        Self::new(
+            MessageType::Response,
+            self.to.clone(),
+            self.from.clone(),
+            serde_json::json!({
+                "compatible": compatible,
+                "server_version": ProtocolVersion::CURRENT,
+            }),
+        )
+        .with_correlation(self.id.clone())
     }
 }
 

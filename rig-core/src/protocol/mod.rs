@@ -45,6 +45,7 @@ use crate::error::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::protocol::types::ProtocolVersion;
 
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
@@ -84,6 +85,16 @@ impl ProtocolHandler {
 /// Core protocol trait that must be implemented by all protocol handlers.
 #[async_trait]
 pub trait Protocol: Send + Sync {
+    /// Returns the protocol version supported by this implementation
+    fn version(&self) -> ProtocolVersion {
+        ProtocolVersion::CURRENT
+    }
+
+    /// Checks if a message's protocol version is compatible
+    async fn check_version(&self, message: &Message) -> Result<bool> {
+        Ok(self.version().is_compatible(&message.protocol_version))
+    }
+
     /// Validates an incoming message before processing.
     /// 
     /// # Arguments
