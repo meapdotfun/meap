@@ -17,3 +17,6 @@ ring = { workspace = true }
 rand = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+rustls = "0.21"
+rustls-pemfile = "1.0"
+tokio-rustls = "0.24"
