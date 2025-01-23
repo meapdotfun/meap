@@ -70,6 +70,10 @@ pub enum Error {
     /// Version mismatch errors
     #[error("Version mismatch: {0}")]
     VersionMismatch(String),
+
+    /// Rate limiting errors
+    #[error("Rate limit error: {0}")]
+    RateLimit(String),
 }
 
 /// Convenience type alias for Results with MEAP errors.

@@ -44,6 +44,9 @@ use tokio_tungstenite::{
 use tracing::{debug, error, info, warn};
 
 mod tls;
+mod rate_limit;
+
+pub use rate_limit::{RateLimiter, RateLimitConfig};
 
 /// Duration between heartbeat messages
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -59,6 +62,8 @@ pub struct ConnectionConfig {
     pub reconnect_delay: Duration,
     /// Size of message buffers
     pub buffer_size: usize,
+    /// Rate limiting configuration
+    pub rate_limit: Option<RateLimitConfig>,
 }
 
 /// Status of a connection.
@@ -127,19 +132,30 @@ pub struct ConnectionPool {
     connections: Arc<RwLock<HashMap<String, Connection>>>,
     /// Connection configuration
     config: ConnectionConfig,
+    /// Rate limiter for managing request rates
+    rate_limiter: Option<RateLimiter>,
 }
 
 impl ConnectionPool {
     /// Creates a new connection pool with the given configuration.
     pub fn new(config: ConnectionConfig) -> Self {
+        let rate_limiter = config.rate_limit.clone()
+            .map(|config| RateLimiter::new(config));
+
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config,
+            rate_limiter,
         }
     }
 
     /// Adds a new connection to the pool.
     pub async fn add_connection(&self, id: String, url: String) -> Result<()> {
+        // Check rate limit before establishing connection
+        if let Some(limiter) = &self.rate_limiter {
+            limiter.check_request(&id).await?;
+        }
+
         let (ws_stream, _) = connect_async(url).await
             .map_err(|e| Error::Connection(format!("Failed to connect: {}", e)))?;
         
@@ -249,6 +265,7 @@ mod tests {
             max_reconnects: 3,
             reconnect_delay: Duration::from_secs(1),
             buffer_size: 32,
+            rate_limit: None,
         };
         
         let mut conn = Connection::new("test".to_string(), tx, config);
