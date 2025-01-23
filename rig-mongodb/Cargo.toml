@@ -1,0 +1,18 @@
+[package]
+name = "meap-mongodb"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+meap-core = { path = "../rig-core" }
+mongodb = { version = "2.7", features = ["tokio-runtime"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+bson = "2.7" 
