@@ -5,48 +5,7 @@
 MEAP (Message Exchange Agent Protocol)
 ===================================
 
-[![Crates.io](https://img.shields.io/crates/v/meap-core.svg)](https://crates.io/crates/meap-core)
-[![Documentation](https://docs.rs/meap-core/badge.svg)](https://docs.rs/meap-core)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/meapdotfun/meap/workflows/CI/badge.svg)](https://github.com/meapdotfun/meap/actions)
-
 A high-performance protocol designed for AI agent communication with built-in support for streaming, validation, and security. MEAP provides a robust foundation for agent-to-agent interactions with features like rate limiting, circuit breaking, and load balancing.
-
-Quick Start
------------
-
-```bash
-cargo add meap-core
-```
-
-```rust
-use meap_core::{Agent, Message, Result};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize agent with automatic versioning and config
-    let mut agent = Agent::builder()
-        .with_id("assistant-1")
-        .with_version((1, 0, 0))
-        .with_endpoint("wss://meap.dev")
-        .build()?;
-
-    // Connect and handle messages
-    agent.connect().await?;
-    
-    while let Some(msg) = agent.receive().await? {
-        match msg.message_type {
-            MessageType::Request => {
-                let response = process_request(msg).await?;
-                agent.send(response).await?;
-            }
-            MessageType::Heartbeat => agent.handle_heartbeat().await?,
-            _ => continue,
-        }
-    }
-    Ok(())
-}
-```
 
 Features
 --------
@@ -136,11 +95,9 @@ Core Features
 
 Protocol Versioning
 ```rust
-let agent = Agent::new(
-    "assistant-1",
-    ProtocolVersion::new(1, 0, 0),
-    ConnectionConfig::default()
-);
+// Example from our actual implementation
+use rig_core::protocol::{Protocol, Message, MessageType};
+use rig_core::error::Result;
 ```
 
 Message Validation and Processing
