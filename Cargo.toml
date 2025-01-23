@@ -1,12 +1,30 @@
-[package]
-name = "meap"
+[workspace]
+members = [
+    "rig-core",
+    "rig-lancedb",
+    "rig-mongodb",
+    "rig-neo4j",
+    "rig-qdrant",
+    "rig-sqlite",
+    "tools/meap-cli",
+    "tools/meap-debug",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+authors = ["MEAP Team <meap@meap.fun>"]
+license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
 tokio = { version = "1.0", features = ["full"] }
 tokio-tungstenite = "0.20"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures = "0.3"
-uuid = { version = "1.4", features = ["v4"] } 
+uuid = { version = "1.4", features = ["v4"] }
+tracing = "0.1"
+ring = "0.17"
+rand = "0.8"
+async-trait = "0.1"
+thiserror = "1.0"
