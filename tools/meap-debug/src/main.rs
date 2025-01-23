@@ -1,44 +1,61 @@
+//! MEAP Debug Tool
+//! Interactive TUI for monitoring and debugging MEAP agents
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use meap_core::{
-    agent::{Agent, AgentStatus},
+    agent::AgentStatus,
+    connection::ConnectionPool,
     protocol::Message,
+    error::Result,
 };
 use std::{
     io,
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::RwLock;
 use tui::{
-    backend::{Backend, CrosstermBackend},
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame, Terminal,
+    Terminal,
 };
 
+/// Application state
 struct App {
-    messages: Vec<Message>,
-    agents: Vec<Agent>,
-    selected_tab: usize,
-    scroll: u16,
+    connection_pool: Arc<ConnectionPool>,
+    messages: Arc<RwLock<Vec<Message>>>,
+    selected_agent: Option<String>,
+    show_help: bool,
 }
 
 impl App {
-    fn new() -> App {
-        App {
-            messages: Vec::new(),
-            agents: Vec::new(),
-            selected_tab: 0,
-            scroll: 0,
+    fn new(connection_pool: Arc<ConnectionPool>) -> Self {
+        Self {
+            connection_pool,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            selected_agent: None,
+            show_help: false,
+        }
+    }
+
+    async fn add_message(&self, message: Message) {
+        let mut messages = self.messages.write().await;
+        messages.push(message);
+        if messages.len() > 100 {
+            messages.remove(0);
         }
     }
 }
 
-fn main() -> Result<(), io::Error> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -46,11 +63,32 @@ fn main() -> Result<(), io::Error> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app and run it
-    let app = App::new();
-    let res = run_app(&mut terminal, app);
+    // Create app state
+    let config = meap_core::connection::ConnectionConfig {
+        max_reconnects: 3,
+        reconnect_delay: Duration::from_secs(1),
+        buffer_size: 32,
+    };
+    let connection_pool = Arc::new(ConnectionPool::new(config));
+    let app = Arc::new(App::new(connection_pool));
 
-    // Restore terminal
+    // Start UI update loop
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            interval.tick().await;
+            if let Err(e) = ui_loop(&mut terminal, &app_clone).await {
+                eprintln!("UI error: {}", e);
+                break;
+            }
+        }
+    });
+
+    // Start message monitoring
+    monitor_messages(app.clone()).await?;
+
+    // Cleanup terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -59,125 +97,103 @@ fn main() -> Result<(), io::Error> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err)
+    Ok(())
+}
+
+async fn ui_loop<B: tui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &App,
+) -> io::Result<()> {
+    terminal.draw(|f| {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),  // Help
+                Constraint::Length(10), // Agents
+                Constraint::Min(0),     // Messages
+            ])
+            .split(f.size());
+
+        // Help section
+        let help = if app.show_help {
+            vec![
+                Spans::from("q: Quit"),
+                Spans::from("h: Toggle help"),
+                Spans::from("↑/↓: Select agent"),
+                Spans::from("Enter: View agent details"),
+            ]
+        } else {
+            vec![Spans::from("Press 'h' for help")]
+        };
+        let help_text = Paragraph::new(help)
+            .block(Block::default().borders(Borders::ALL).title("Help"));
+        f.render_widget(help_text, chunks[0]);
+
+        // Agents list
+        let agents = app.connection_pool.connections().blocking_read();
+        let agent_items: Vec<ListItem> = agents
+            .iter()
+            .map(|(id, conn)| {
+                let status = if conn.is_alive() { "Active" } else { "Inactive" };
+                ListItem::new(Spans::from(vec![
+                    Span::raw(id),
+                    Span::raw(" - "),
+                    Span::styled(
+                        status,
+                        Style::default().fg(if conn.is_alive() {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
+                    ),
+                ]))
+            })
+            .collect();
+
+        let agents_list = List::new(agent_items)
+            .block(Block::default().borders(Borders::ALL).title("Agents"))
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        f.render_widget(agents_list, chunks[1]);
+
+        // Messages
+        let messages = app.messages.blocking_read();
+        let message_items: Vec<ListItem> = messages
+            .iter()
+            .map(|msg| {
+                ListItem::new(vec![Spans::from(vec![
+                    Span::styled(
+                        format!("{} -> {}: ", msg.from, msg.to),
+                        Style::default().fg(Color::Blue),
+                    ),
+                    Span::raw(format!("{:?}", msg.content)),
+                ])])
+            })
+            .collect();
+
+        let messages_list = List::new(message_items)
+            .block(Block::default().borders(Borders::ALL).title("Messages"));
+        f.render_widget(messages_list, chunks[2]);
+    })?;
+
+    if event::poll(Duration::from_millis(100))? {
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Char('q') => return Err(io::Error::new(io::ErrorKind::Other, "quit")),
+                KeyCode::Char('h') => app.show_help = !app.show_help,
+                _ => {}
+            }
+        }
     }
 
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
-    let mut last_tick = Instant::now();
-    let tick_rate = Duration::from_millis(250);
-
+async fn monitor_messages(app: Arc<App>) -> Result<()> {
+    let mut interval = tokio::time::interval(Duration::from_millis(100));
     loop {
-        terminal.draw(|f| ui(f, &app))?;
-
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-
-        if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Tab => {
-                        app.selected_tab = (app.selected_tab + 1) % 2;
-                    }
-                    KeyCode::Up => {
-                        app.scroll = app.scroll.saturating_sub(1);
-                    }
-                    KeyCode::Down => {
-                        app.scroll = app.scroll.saturating_add(1);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if last_tick.elapsed() >= tick_rate {
-            // Update app state
-            last_tick = Instant::now();
-        }
+        interval.tick().await;
+        // TODO: Implement message monitoring
     }
-}
-
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints(
-            [
-                Constraint::Length(3),
-                Constraint::Min(0),
-                Constraint::Length(3),
-            ]
-            .as_ref(),
-        )
-        .split(f.size());
-
-    // Title
-    let title = Paragraph::new("MEAP Debug Console")
-        .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(title, chunks[0]);
-
-    // Main content
-    let content = match app.selected_tab {
-        0 => render_messages(app),
-        1 => render_agents(app),
-        _ => vec![],
-    };
-
-    let content_list = List::new(content)
-        .block(Block::default().borders(Borders::ALL))
-        .style(Style::default().fg(Color::White));
-    f.render_widget(content_list, chunks[1]);
-
-    // Footer
-    let footer = Paragraph::new(vec![Spans::from(vec![
-        Span::raw("Press "),
-        Span::styled("Tab", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(" to switch views, "),
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(" to quit"),
-    ])])
-    .block(Block::default().borders(Borders::ALL));
-    f.render_widget(footer, chunks[2]);
-}
-
-fn render_messages(app: &App) -> Vec<ListItem> {
-    app.messages
-        .iter()
-        .map(|msg| {
-            ListItem::new(vec![
-                Spans::from(vec![
-                    Span::styled(
-                        format!("[{}] ", msg.message_type),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                    Span::raw(format!("{} -> {}", msg.from, msg.to)),
-                ]),
-                Spans::from(vec![Span::raw(format!(
-                    "  {}",
-                    msg.content.to_string()
-                ))]),
-            ])
-        })
-        .collect()
-}
-
-fn render_agents(app: &App) -> Vec<ListItem> {
-    app.agents
-        .iter()
-        .map(|agent| {
-            ListItem::new(vec![Spans::from(vec![
-                Span::styled(
-                    format!("[{}] ", agent.id()),
-                    Style::default().fg(Color::Green),
-                ),
-                Span::raw(format!("Capabilities: {:?}", agent.capabilities())),
-            ])])
-        })
-        .collect()
+    Ok(())
 } 

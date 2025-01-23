@@ -14,8 +14,8 @@ meap-sqlite = { path = "../../rig-sqlite" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
 console = "0.15"
-tui = "0.19"
-crossterm = "0.27"
+tui = { package = "ratatui", version = "0.22" }
+crossterm = "0.26"
 chrono = "0.4" 
