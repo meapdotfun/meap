@@ -1,0 +1,21 @@
+[package]
+name = "meap-debug"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+meap-core = { path = "../../rig-core" }
+meap-mongodb = { path = "../../rig-mongodb" }
+meap-neo4j = { path = "../../rig-neo4j" }
+meap-qdrant = { path = "../../rig-qdrant" }
+meap-sqlite = { path = "../../rig-sqlite" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+console = "0.15"
+tui = "0.19"
+crossterm = "0.27"
+chrono = "0.4" 
