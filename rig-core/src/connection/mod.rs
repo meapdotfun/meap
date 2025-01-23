@@ -46,9 +46,11 @@ use tracing::{debug, error, info, warn};
 mod tls;
 mod rate_limit;
 mod metrics;
+mod balancer;
 
 pub use rate_limit::{RateLimiter, RateLimitConfig};
 pub use metrics::{ConnectionMetrics, ConnectionStats};
+pub use balancer::{LoadBalancer, BalancerConfig, BalanceStrategy};
 
 /// Duration between heartbeat messages
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -66,6 +68,8 @@ pub struct ConnectionConfig {
     pub buffer_size: usize,
     /// Rate limiting configuration
     pub rate_limit: Option<RateLimitConfig>,
+    /// Load balancing configuration
+    pub balance_config: Option<BalancerConfig>,
 }
 
 /// Status of a connection.
@@ -140,6 +144,8 @@ pub struct ConnectionPool {
     config: ConnectionConfig,
     /// Rate limiter for managing request rates
     rate_limiter: Option<RateLimiter>,
+    /// Load balancer for managing connection distribution
+    load_balancer: Option<LoadBalancer>,
 }
 
 impl ConnectionPool {
@@ -148,21 +154,32 @@ impl ConnectionPool {
         let rate_limiter = config.rate_limit.clone()
             .map(|config| RateLimiter::new(config));
 
+        let load_balancer = config.balance_config.clone()
+            .map(|config| LoadBalancer::new(config));
+
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config,
             rate_limiter,
+            load_balancer,
         }
     }
 
     /// Adds a new connection to the pool.
     pub async fn add_connection(&self, id: String, url: String) -> Result<()> {
+        // Get next node from load balancer if enabled
+        let target_node = if let Some(balancer) = &self.load_balancer {
+            balancer.next_node(&self.connections.read().await).await?
+        } else {
+            url
+        };
+
         // Check rate limit before establishing connection
         if let Some(limiter) = &self.rate_limiter {
             limiter.check_request(&id).await?;
         }
 
-        let (ws_stream, _) = connect_async(url).await
+        let (ws_stream, _) = connect_async(target_node).await
             .map_err(|e| Error::Connection(format!("Failed to connect: {}", e)))?;
         
         let (write, read) = ws_stream.split();
@@ -272,6 +289,7 @@ mod tests {
             reconnect_delay: Duration::from_secs(1),
             buffer_size: 32,
             rate_limit: None,
+            balance_config: None,
         };
         
         let mut conn = Connection::new("test".to_string(), tx, config);
