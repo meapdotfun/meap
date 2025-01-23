@@ -28,18 +28,22 @@
 
 use crate::error::{Error, Result};
 use crate::protocol::{Message, MessageType};
+use crate::security::TlsConfig;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time;
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::protocol::Message as WsMessage,
     WebSocketStream,
 };
 use tracing::{debug, error, info, warn};
+
+mod tls;
 
 /// Duration between heartbeat messages
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -202,6 +206,34 @@ impl ConnectionPool {
                 }
             }
         });
+    }
+
+    /// Creates a new secure connection with TLS
+    pub async fn add_secure_connection(
+        &self,
+        id: String,
+        url: String,
+        tls_config: &TlsConfig
+    ) -> Result<()> {
+        let acceptor = tls::create_tls_acceptor(tls_config).await?;
+        let (ws_stream, _) = connect_async(url).await
+            .map_err(|e| Error::Connection(format!("Failed to connect: {}", e)))?;
+        
+        let tls_stream = acceptor.accept(ws_stream).await
+            .map_err(|e| Error::Security(format!("TLS handshake failed: {}", e)))?;
+        
+        let (write, read) = tls_stream.split();
+        let (tx, rx) = mpsc::channel(self.config.buffer_size);
+        
+        let connection = Connection::new(id.clone(), tx, self.config.clone());
+        
+        let mut connections = self.connections.write().await;
+        connections.insert(id.clone(), connection);
+
+        self.spawn_message_handler(read, id.clone());
+        self.spawn_writer_handler(write, rx);
+        
+        Ok(())
     }
 }
 
