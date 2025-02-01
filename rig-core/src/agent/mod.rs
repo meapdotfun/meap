@@ -55,6 +55,10 @@ pub enum AgentCapability {
     GraphDB,
     /// Memory management capabilities
     Memory,
+    /// Deepseek code generation and analysis
+    DeepseekCode,
+    /// Deepseek language model capabilities  
+    DeepseekLLM,
     /// Custom capability with string identifier
     Custom(String),
 }
