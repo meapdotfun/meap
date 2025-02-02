@@ -6,6 +6,7 @@ members = [
     "rig-neo4j",
     "rig-qdrant",
     "rig-sqlite",
+    "rig-deepseek",
     "tools/meap-cli",
     "tools/meap-debug",
 ]
