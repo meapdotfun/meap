@@ -1,31 +1,33 @@
 [workspace]
 members = [
     "rig-core",
-    "rig-lancedb",
-    "rig-mongodb",
-    "rig-neo4j",
+    "rig-mobile",
+    "rig-deepseek",
     "rig-qdrant",
     "rig-sqlite",
-    "rig-deepseek",
-    "tools/meap-cli",
-    "tools/meap-debug",
+    "rig-neo4j",
+    "rig-mongodb",
+    "rig-lancedb",
+    "rig-broker",
+    "rig-registry",
+    "rig-gateway"
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["MEAP Team <meap@meap.fun>"]
+authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 
 [workspace.dependencies]
-tokio = { version = "1.0", features = ["full"] }
-tokio-tungstenite = "0.20"
+tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-futures = "0.3"
-uuid = { version = "1.4", features = ["v4"] }
 tracing = "0.1"
-ring = "0.17"
-rand = "0.8"
-async-trait = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"
 thiserror = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+uuid = { version = "1.7", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
