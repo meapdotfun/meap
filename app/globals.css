@@ -15,10 +15,7 @@ body {
   margin: 0;
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell;
-  background:
-    radial-gradient(900px 600px at 15% 15%, rgba(226,198,25,0.18), transparent 60%),
-    radial-gradient(900px 600px at 85% 20%, rgba(255,219,1,0.18), transparent 60%),
-    linear-gradient(180deg, #ffffff, #fffdf3);
+  background: #ffffff;
 }
 
 /* Header */

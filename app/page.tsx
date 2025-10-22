@@ -6,51 +6,13 @@ const API_BASE = 'https://api.meap.fun';
 
 export default function Page() {
   return (
-    <div className="page">
-      <header className="navbar">
-        <div className="brand">
-          <span className="brand-dot" />
-          <span>MEAP</span>
-        </div>
-        <div className="nav-right">
-          <span className="chip">BETA</span>
-        </div>
-      </header>
-      <main className="container">
-        <section className="card">
+    <main className="screen">
+      <div className="shell">
+        <section className="panel" style={{ position: 'relative' }}>
           <VibePanel />
         </section>
-      </main>
-      <style jsx global>{`
-        :root {
-          --bg: #f6f6f6;
-          --card: #ffffff;
-          --text: #1c1c1c;
-          --muted: #6b6b6b;
-          --accent: #ffdb01;
-          --border: #e9e9e9;
-        }
-        html, body { height: 100%; }
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-        * { box-sizing: border-box; }
-        .page { min-height: 100vh; display: flex; flex-direction: column; }
-        .navbar { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--card); }
-        .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.2px; }
-        .brand-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
-        .nav-right { display: flex; align-items: center; gap: 10px; }
-        .chip { padding: 4px 10px; border-radius: 999px; background: #f0f0f0; color: #222; font-size: 12px; font-weight: 700; border: 1px solid var(--border); }
-        .container { max-width: 980px; width: 100%; margin: 0 auto; padding: 18px 20px 40px; }
-        .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 1px 0 rgba(0,0,0,0.03); }
-        .pill { padding: 6px 10px; border-radius: 10px; background: #fafafa; border: 1px solid var(--border); color: #222; font-weight: 600; }
-        .badge { padding: 4px 10px; border-radius: 999px; background: #111; color: #fff; font-weight: 800; font-size: 12px; }
-        .left-pill { padding: 6px 10px; border-radius: 10px; border: 1px solid #7a2f2f; background: #fff5f5; }
-        .stream-item { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-        @media (max-width: 720px) {
-          .container { padding: 12px; }
-          .navbar { padding: 0 12px; }
-        }
-      `}</style>
-    </div>
+      </div>
+    </main>
   );
 }
 
