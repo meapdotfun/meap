@@ -1,0 +1,35 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next/
+out/
+.vercel/
+
+# OpenNext build output
+.open-next/
+
+# Cloudflare Workers local state
+.wrangler/
+api-worker/.wrangler/
+.mf/
+api-worker/.mf/
+
+# Environment files (keep example only)
+.env
+.env.*
+!.env.example
+.dev.vars
+api-worker/.dev.vars
+
+# Build artifacts
+dist/
+api-worker/dist/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
