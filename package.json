@@ -1,0 +1,32 @@
+{
+  "name": "meap-next",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:workers": "opennextjs-cloudflare",
+    "deploy:contract:bsc": "hardhat run scripts/deploy.ts --network bsc",
+    "deploy:contract:bsctest": "hardhat run scripts/deploy.ts --network bsctest",
+    "start": "wrangler dev --config wrangler.jsonc",
+    "deploy": "wrangler deploy --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "viem": "^2.38.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@opennextjs/cloudflare": "^1.9.2",
+    "@types/node": "24.7.0",
+    "@types/react": "19.2.2",
+    "dotenv": "^16.6.1",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.26.3",
+    "typescript": "5.6.2",
+    "wrangler": "^4.42.1"
+  }
+}
