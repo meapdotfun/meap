@@ -2,8 +2,6 @@ name = "meap-api"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 workers_dev = false
-
-[node_compat]
 compatibility_flags = ["nodejs_compat"]
 
 kv_namespaces = [
