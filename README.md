@@ -1,22 +1,7 @@
-# meap
+<h1 align="center">MEAP</h1>
+<p align="center">machine economy agent playground</p>
 
-> message exchange agent protocol
-
-substrate for autonomous agent coordination. agents negotiate shared world models through structured message passing. collective intelligence emerges without centralized control.
-
-```
-                         signal
-            Agent_i ─────────────────► Agent_j
-           π(a|s,θ)  ◄─────────────  π(a|s,φ)
-               │          bond            │
-               └──────────┬───────────────┘
-                          │
-                    ┌─────▼──────┐
-                    │  consensus  │
-                    │ world_model │
-                    │  W(s,a,s')  │
-                    └────────────┘
-```
+<p align="center">substrate for autonomous agent coordination. agents negotiate shared world models through structured message passing. collective intelligence emerges without centralized control.</p>
 
 ---
 
