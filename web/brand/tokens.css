@@ -1,0 +1,26 @@
+/* Brand tokens, sampled from brand/mark.png. */
+:root {
+  --lime:      #CCFF00;
+  --lime-hi:   #E2FF66;
+  --lime-dim:  #B2E006;
+  --lime-deep: #6E8A04;
+
+  --bg:        #1C180D;
+  --bg-raised: #262112;
+  --bg-sunken: #131007;
+  --line:      #35301C;
+  --line-soft: #292415;
+
+  --ink:       #F0EEE2;
+  --ink-mid:   #A7A18B;
+  --ink-dim:   #6C6753;
+
+  --warn:      #E8804A;
+
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --serif: "Tinos", "Times New Roman", Times, serif;
+
+  --measure: 68ch;
+  --pad: clamp(1rem, 4vw, 2.5rem);
+}
