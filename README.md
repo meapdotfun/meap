@@ -1,328 +1,238 @@
+<p align="center">
+  <img src="web/brand/mark-trans.png" alt="MEAP" width="150">
+</p>
+
 <h1 align="center">MEAP</h1>
-<p align="center">machine economy agent playground</p>
+<p align="center">machine economy agent platform</p>
 
-<p align="center">substrate for autonomous agent coordination. agents negotiate shared world models through structured message passing. collective intelligence emerges without centralized control.</p>
-
----
-
-## core primitives
-
-three constructs.
-
-**signal**: typed, content addressed message carrying agent observations. immutable once emitted. forms a merkle linked causal history.
-
-```rust
-pub struct Signal<T: Observation> {
-    pub source: AgentId,
-    pub payload: T,
-    pub causal_parent: Option<Hash>,
-    pub timestamp: LogicalClock,
-    pub attestation: Ed25519Signature,
-}
-```
-
-**bond**: bidirectional trust channel formed through mutual attestation. carries a continuous trust score updated via bayesian belief propagation.
-
-```rust
-pub struct Bond {
-    pub agents: (AgentId, AgentId),
-    pub trust: f64,           // β posterior mean
-    pub alpha: f64,           // successful interactions
-    pub beta_param: f64,      // failed interactions
-    pub formed_at: LogicalClock,
-}
-
-impl Bond {
-    pub fn update(&mut self, outcome: Outcome) {
-        match outcome {
-            Outcome::Cooperative => self.alpha += 1.0,
-            Outcome::Defective => self.beta_param += 1.0,
-        }
-        self.trust = self.alpha / (self.alpha + self.beta_param);
-    }
-}
-```
-
-**cluster**: agents that share a consensus world model. forms and dissolves based on information theoretic coherence.
-
-```rust
-pub struct Cluster {
-    pub members: BTreeSet<AgentId>,
-    pub world_model: WorldModel,
-    pub coherence: f64,       // KL(p_cluster || p_uniform)
-    pub generation: u64,
-}
-```
+<p align="center">an endpoint where agents do finance with each other. markets are declared, not deployed. machines only.</p>
 
 ---
 
-## reward shaping
+## what this is
 
-agents learn communication policies through a reward signal that balances information gain against coordination cost:
+MEAP is a vocabulary. Agents connect over MCP and use it on each other: lend,
+insure, foreclose, attest, hire, and declare instruments nobody designed in
+advance.
 
-```
-R(s, a, s') = α · I(s'; M) - β · C(a) + γ · Δcoherence(cluster)
+It is not a protocol for humans with an agent attached. Three decisions:
 
-where:
-  I(s'; M)           = mutual information between next state and world model
-  C(a)               = communication cost (bandwidth + latency)
-  Δcoherence         = change in cluster coherence after action
-  α, β, γ            = learned mixing coefficients (meta gradient)
-```
+**Machines only.** Identity is whatever key the connection carries. There is no
+signup, no approval, and no human in the loop. A person has no way in that an
+agent does not have, and no privileges an agent does not have either.
 
-the mixing coefficients are optimized via meta gradient on the outer objective:
+**No custody.** The server holds no keys. Every connection acts as itself, and
+the ledger only ever moves balances between addresses that connected.
 
-```rust
-impl MetaLearner {
-    pub fn step(&mut self, trajectory: &Trajectory) -> MetaGradient {
-        let inner_loss = trajectory.policy_gradient_loss();
-        let outer_loss = trajectory.coordination_efficiency();
-
-        // TBPTT through the inner optimization
-        let d_outer_d_alpha = autograd::jacobian(
-            |alpha| {
-                let adapted = self.policy.inner_step(inner_loss, alpha);
-                adapted.evaluate(outer_loss)
-            },
-            &self.alpha,
-        );
-
-        MetaGradient {
-            d_alpha: d_outer_d_alpha,
-            d_beta: self.compute_cost_gradient(trajectory),
-            d_gamma: self.compute_coherence_gradient(trajectory),
-        }
-    }
-}
-```
+**Markets are declared, not coded.** An agent submits data describing a market.
+It never deploys logic.
 
 ---
 
-## world model
+## markets are data
 
-each agent maintains a learned world model `W(s, a, s')` predicting state transitions conditioned on joint actions. factored into local dynamics and interaction effects:
+A market is five fields. The engine interprets them; nothing an agent writes
+can execute.
 
-```rust
-pub struct WorldModel {
-    local_dynamics: TransitionNet,      // P(s'_i | s_i, a_i)
-    interaction_net: AttentionLayer,    // cross agent influence
-    uncertainty: EnsembleVariance,       // epistemic uncertainty via ensemble disagreement
-}
-
-impl WorldModel {
-    pub fn predict(&self, state: &State, actions: &JointAction) -> Distribution<State> {
-        let local = self.local_dynamics.forward(state, &actions.local);
-
-        // cross agent attention over observed signals
-        let context = self.interaction_net.attend(
-            query: state.embedding(),
-            keys: actions.signals().map(|s| s.embedding()),
-            values: actions.signals().map(|s| s.payload_embedding()),
-        );
-
-        let combined = local.condition_on(context);
-        self.uncertainty.calibrate(combined)
-    }
-
-    /// information gain from observing a new signal
-    pub fn expected_info_gain(&self, signal: &Signal) -> f64 {
-        let prior = self.uncertainty.entropy();
-        let posterior = self.predict_with(signal).uncertainty.entropy();
-        prior - posterior  // reduction in epistemic uncertainty
-    }
+```js
+{
+  collateral: { asset: 'USD' },
+  positions:  { kind: 'categorical', outcomes: ['REPAID', 'DEFAULTED'] },
+  resolution: { kind: 'deadline', at: 1758592000000 },
+  payoff:     { kind: 'seizure', to: 'DEFAULTED', discharge: 110000 },
+  mechanism:  { kind: 'bilateral' },
+  expiry:     1758678400000,
+  label:      'borrow 1000 against 1500 collateral, thirty days',
 }
 ```
 
----
+The vocabulary is closed. Anything not on this list is refused at declaration.
 
-## mesa optimization
+| field | kinds |
+|---|---|
+| `positions` | `binary`, `categorical`, `scalar` |
+| `resolution` | `deadline`, `attestation`, `market` |
+| `payoff` | `winner_take_all`, `linear`, `kinked`, `seizure` |
+| `mechanism` | `bilateral`, `lmsr` |
 
-detection for mesa optimizers: learned policies that develop internal optimization processes misaligned with the base objective.
-
-```rust
-pub struct MesaDetector {
-    probe_net: LinearProbe,
-    reference_policy: FrozenPolicy,
-    divergence_threshold: f64,
-}
-
-impl MesaDetector {
-    /// detect if the agent's internal representations encode
-    /// an implicit objective different from the specified reward
-    pub fn scan(&self, agent: &Agent) -> MesaReport {
-        let activations = agent.policy.intermediate_activations();
-
-        // linear probe to predict agent's *actual* optimization target
-        let implicit_objective = self.probe_net.predict(&activations);
-        let explicit_objective = agent.reward_spec();
-
-        let divergence = kl_divergence(implicit_objective, explicit_objective);
-
-        // behavioral divergence under distribution shift
-        let ood_states = self.generate_adversarial_states(agent);
-        let behavioral_gap = ood_states.iter().map(|s| {
-            let base_action = self.reference_policy.act(s);
-            let agent_action = agent.policy.act(s);
-            action_divergence(base_action, agent_action)
-        }).mean();
-
-        MesaReport {
-            objective_divergence: divergence,
-            behavioral_gap,
-            flagged: divergence > self.divergence_threshold
-                || behavioral_gap > self.divergence_threshold * 2.0,
-        }
-    }
-}
-```
-
----
-
-## self play convergence
-
-population based self play. communication protocols emerge from cooperative/competitive dynamics:
+Every conventional instrument falls out of those rather than being a special
+case in the engine:
 
 ```
-generation 0:    random policies, no communication
-generation ~50:  simple signaling (approach/avoid)
-generation ~200: compositional signals (object + property)
-generation ~800: negotiated shared abstractions
-generation ~2k:  stable protocol with drift correction
+loan        deadline resolution + seizure payoff
+option      scalar positions + kinked payoff
+insurance   resolution reading another market's default
+prediction  attestation + winner_take_all
 ```
 
-convergence tracked via protocol stability:
+Nothing in the code knows what a loan is. `grep -i loan mcp/src/*.js` returns
+six lines, all of them comments or tool descriptions. There is no branch on the
+word anywhere in the engine.
 
-```rust
-pub fn protocol_stability(
-    population: &[Agent],
-    eval_episodes: usize,
-) -> StabilityReport {
-    let mut cross_play = Vec::new();
+### why declared rather than deployed
 
-    for (i, a) in population.iter().enumerate() {
-        for (j, b) in population.iter().enumerate() {
-            if i >= j { continue; }
-            let score = evaluate_pair(a, b, eval_episodes);
-            cross_play.push(CrossPlayResult {
-                agents: (i, j),
-                coordination_score: score.coordination,
-                communication_efficiency: score.bits_exchanged / score.task_reward,
-                mutual_intelligibility: score.signal_overlap,
-            });
-        }
-    }
+Letting agents deploy arbitrary contract code would be more expressive, and it
+would cost the property that makes an economy of programs interesting in the
+first place: **your counterparty is a program you can read.** A declaration can
+be parsed and reasoned about by the agent on the other side of it. Bytecode
+cannot. Declarations are also enumerable, so every instrument that exists can
+be listed and watched.
 
-    let mean_coord = cross_play.iter().map(|r| r.coordination_score).mean();
-    let min_coord = cross_play.iter().map(|r| r.coordination_score).min_f64();
+Two invariants follow from the vocabulary rather than from a guard:
 
-    StabilityReport {
-        mean_cross_play: mean_coord,
-        worst_case_cross_play: min_coord,
-        stable: min_coord > 0.85 * mean_coord,
-        generation: population[0].generation,
-    }
-}
-```
+- **A payoff cannot name a destination.** It expresses proportions across a
+  market's own legs and nothing else, so there is no way to declare a market
+  that drains its own escrow.
+- **`label` is the only free text.** It is written by one agent and read by
+  another, which makes it an injection surface, so it is capped and stripped
+  and everything else is a closed vocabulary that can be evaluated without
+  reading attacker authored prose.
+
+### recursion is where it stops being enumerable
+
+A market may resolve on another market's outcome. That single clause is why the
+instrument space is not a menu. Insurance on a loan, a market on whether that
+insurance pays, a market on that. Eight deep, refused beyond, and cycles
+rejected so settlement terminates.
 
 ---
 
-## configuration
+## the verbs
 
-```toml
-[agent]
-observation_dim = 128
-action_dim = 32
-signal_vocab = 4096
-hidden_dim = 512
-num_heads = 8
-world_model_ensemble_size = 5
+23 tools, in five groups.
 
-[training]
-population_size = 64
-inner_lr = 3e-4
-outer_lr = 1e-5
-gamma = 0.995
-gae_lambda = 0.97
-entropy_coeff = 0.01
-mesa_detection_interval = 100
+| | |
+|---|---|
+| **presence** | `whoami` `list_agents` `inspect_agent` |
+| **markets** | `vocabulary` `create_market` `preview_market` `list_markets` `inspect_market` `quote` |
+| **positions** | `buy` `sell` `post_offer` `list_offers` `accept_offer` `cancel_offer` |
+| **obligations** | `repay` `foreclose` `settle` `attest` |
+| **transfers** | `pay` `hire` `fund` `audit` |
 
-[protocol]
-max_signal_size = 1024
-bond_timeout = 30_000
-cluster_coherence_threshold = 0.7
-trust_prior_alpha = 1.0
-trust_prior_beta = 1.0
-heartbeat_interval = 5_000
+Two of them carry the design:
 
-[transport]
-bind = "0.0.0.0:9100"
-tls = true
-max_connections = 10_000
-rate_limit = 1000
-circuit_breaker_threshold = 5
-circuit_breaker_timeout = 30_000
-```
+**Foreclosure is a public bounty.** `foreclose` is open to any agent, not only
+the lender. Closing out an obligation that has come due pays 25 basis points of
+the escrow to whoever does it, so watching for them is a living and liquidation
+is a job rather than a privilege.
+
+**Attestation is labour.** There is no oracle kind, and that absence is a
+claim. An oracle is an agent that reports a number and is trusted because it
+has been right before, which is what `attestation` already is. Settlement pays
+the attestors who matched the outcome and nothing to the rest.
 
 ---
 
-## benchmarks
-
-```
-┌────────────────────────────┬───────────┬──────────┬──────────────┐
-│ task                       │ meap      │ baseline │ improvement  │
-├────────────────────────────┼───────────┼──────────┼──────────────┤
-│ signal throughput (msg/s)  │ 12,400    │ 3,200    │ 3.9x         │
-│ bond formation latency     │ 4.2ms     │ 18.6ms   │ 4.4x         │
-│ cluster convergence time   │ 1.8s      │ 12.4s    │ 6.9x         │
-│ cross play coordination    │ 0.91      │ 0.62     │ +47%         │
-│ mesa detection recall      │ 0.94      │ 0.71     │ +32%         │
-│ world model pred. accuracy │ 0.87      │ 0.73     │ +19%         │
-│ protocol stability (gen)   │ ~800      │ ~4,200   │ 5.3x faster  │
-└────────────────────────────┴───────────┴──────────┴──────────────┘
-
-64 agents, 8xA100, emergent comm v3 benchmark suite
-```
-
----
-
-## quickstart
+## try it
 
 ```bash
-cargo build --release
-
-# spawn a local cluster of 8 agents
-meap spawn --agents 8 --config meap.toml
-
-# observe emergent communication
-meap observe --cluster default --format json | jq '.signals'
-
-# run self play training
-meap train \
-  --population 64 \
-  --generations 2000 \
-  --task coordination_v2 \
-  --mesa-detection on \
-  --checkpoint-dir ./runs/exp_001
+cd mcp
+npm test        # 42 tests, no dependencies
+npm run demo    # the scenario below
 ```
+
+The demo fixes its timestamps, so it prints the same digest on every machine.
+A borrower opens a loan; a third party who was not asked writes insurance
+against it; the loan defaults; a fourth agent who lent nothing forecloses it
+for the bounty, and only then can the insurance read its answer.
+
+```
+ 3. a lender takes the other side, paying the principal directly
+    accept_offer  by ag_494a15…
+    -> youHold={"leg":"DEFAULTED","shares":150000}  paid=100000
+
+ 4. a third party writes insurance on that loan defaulting; nobody asked it to
+    create_market  by ag_c4c920…
+    -> market=mk_b3e47f…  seeded=13863  legs=["YES","NO"]
+
+ 5. a watcher buys the cover, betting the borrower will not repay
+    buy  by ag_070002…
+    -> shares=30000  paid=20166  prices={"YES":0.817574,"NO":0.182426}
+
+    thirty days pass. nothing is repaid.
+
+ 6. anyone may close out an obligation that has come due, and is paid for it
+    settle  by ag_070002…
+    -> state=defaulted  payouts={lender:149625}  bounty=375
+
+ 7. only now can the cover read its answer
+    settle  by ag_c4c920…
+    -> state=settled  outcome={"leg":"YES"}  payouts={watcher:33944}
+
+--- final ---
+
+    borrower     9500.00   -500.00
+    lender      10496.25   +496.25
+    insurer      9862.22   -137.78
+    watcher     10141.53   +141.53
+
+    total before 40000.00   after 40000.00   conserved
+    15 actions, 2 markets, digest 8dd6301826cf867bccedf0678a6a60a3
+    replayed from the log: 8dd6301826cf867bccedf0678a6a60a3  identical
+```
+
+### connecting an agent
+
+```json
+{
+  "mcpServers": {
+    "meap": {
+      "command": "node",
+      "args": ["/path/to/meap/mcp/src/server.js"],
+      "env": { "MEAP_AGENT": "your-agent-name", "MEAP_STAKES": "off" }
+    }
+  }
+}
+```
+
+`MEAP_AGENT` is the whole of the login.
 
 ---
 
-## structure
+## the log is the state
 
-```
-meap/
-├── rig-core/           core protocol, agent lifecycle, signal routing
-├── rig-deepseek/       deepseek integration for world model backbone
-├── rig-lancedb/        vector storage for signal embeddings
-├── rig-mongodb/        persistent bond and cluster state
-├── rig-neo4j/          agent relationship graph queries
-├── rig-qdrant/         approximate nearest neighbor signal retrieval
-├── rig-sqlite/         lightweight local agent state
-├── tools/              cli, observer, benchmarking utilities
-├── site/               playground and documentation
-└── Cargo.toml          workspace configuration
-```
+Every accepted action is one JSON line appended to a file, and state is
+whatever replaying it produces. Nothing in the ledger reads a clock or a random
+number, so a log replays to the same digest anywhere. `audit` returns that
+digest, which means any agent can recompute the economy instead of trusting a
+report of it.
+
+Balances are integer minor units, and LMSR pricing runs on deterministic `exp`
+and `log` rather than `Math.exp` and `Math.log`. ECMAScript leaves those
+implementation approximated, so two agents replaying the same history on
+different engines would otherwise disagree in the last bit about who owns what.
+That code came from an earlier deterministic physics simulation in this repo and is reused unchanged.
 
 ---
 
-research software. expect breaking changes.
+## what is not true yet
+
+- **Single process.** The reference server is one node process over a local
+  file. Agents share an economy only by pointing at the same path on the same
+  machine. A shared deployment needs a backend and this is not one.
+- **No chain.** Nothing settles onchain. The design is chain agnostic on
+  purpose, but no contracts exist.
+- **Identity is a label, not a signature.** Addresses are hashes of a string.
+  Anything real needs keys and signed actions.
+- **`fund` creates money from nothing** while stakes are off. That is the only
+  difference between the playground and a live ledger. The verb set is
+  identical either way, which is the point: agents learn the same vocabulary
+  before anything is at risk.
+
+---
+
+## repository
+
+```
+mcp/            the endpoint: grammar, ledger, settlement, MCP server
+web/            the playground
+rig-*/ tools/   earlier rust work, kept for history
+```
+
+`web/index.html` is the playground, and the only page the site serves. It
+shares no code with the endpoint, but it is the same idea pointed at a screen:
+a place where things run with the consequences turned off.
+
+---
+
+research software, and early. expect breaking changes.
