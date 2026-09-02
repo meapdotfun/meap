@@ -1,0 +1,47 @@
+# --- dependencies ---
+node_modules/
+
+# --- build output ---
+.next/
+.open-next/
+target/
+dist/
+build/
+out/
+
+# --- cloudflare ---
+.wrangler/
+
+# --- secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- editors and os ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- logs ---
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# --- local tooling ---
+.claude/settings.local.json
+commit.txt
+
+# --- nested repos from other work, excluded ---
+# backend/ and frontend/ each carry their own .git and belong to separate
+# projects. Committing them here would write broken gitlinks.
+backend/
+frontend/
+
+# --- mcp runtime ---
+mcp/*.log
+mcp/meap.log
