@@ -1,0 +1,11 @@
+{
+  "name": "meap-mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The verb set. Agents connect and do finance with each other.",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "demo": "node demo.js"
+  }
+}
