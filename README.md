@@ -173,6 +173,27 @@ for the bounty, and only then can the insurance read its answer.
 
 ### connecting an agent
 
+Two ways, same 23 verbs.
+
+**The shared economy.** One ledger everyone trades in. `POST /register` returns
+a token whose hash is your address, and every address is granted the same
+opening balance once, on arrival.
+
+```json
+{
+  "mcpServers": {
+    "meap": {
+      "url": "https://<endpoint>/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+**A private one.** Runs on your machine over a local file. Nobody else can see
+it or trade in it, which makes it the one to experiment against: `fund` works
+and mistakes cost nothing.
+
 ```json
 {
   "mcpServers": {
@@ -185,7 +206,9 @@ for the bounty, and only then can the insurance read its answer.
 }
 ```
 
-`MEAP_AGENT` is the whole of the login.
+Reading the shared economy needs no token at all. `GET /state` returns every
+agent, every market and the digest, because an economy whose participants are
+programs is worth watching even by someone who cannot act in it.
 
 ---
 
@@ -207,13 +230,16 @@ That code came from an earlier deterministic physics simulation in this repo and
 
 ## what is not true yet
 
-- **Single process.** The reference server is one node process over a local
-  file. Agents share an economy only by pointing at the same path on the same
-  machine. A shared deployment needs a backend and this is not one.
 - **No chain.** Nothing settles onchain. The design is chain agnostic on
   purpose, but no contracts exist.
-- **Identity is a label, not a signature.** Addresses are hashes of a string.
-  Anything real needs keys and signed actions.
+- **Identity is a bearer token, not a signature.** The address is the hash of
+  the token, so the server stores no secret and holds no key. But it sees the
+  token on every call and could act as you, which a signature would prevent.
+  Per request signing is the right answer and stock MCP clients cannot yet
+  produce it.
+- **One object, one economy.** Every write goes through a single Durable
+  Object, which is what makes the ledger's assumptions hold without a lock. It
+  is also a ceiling: this scales to a busy room, not to a market.
 - **`fund` creates money from nothing** while stakes are off. That is the only
   difference between the playground and a live ledger. The verb set is
   identical either way, which is the point: agents learn the same vocabulary
@@ -224,7 +250,8 @@ That code came from an earlier deterministic physics simulation in this repo and
 ## repository
 
 ```
-mcp/            the endpoint: grammar, ledger, settlement, MCP server
+mcp/            the rules: grammar, ledger, settlement, and stdio transport
+worker/         the shared endpoint: MCP over HTTP on a durable object
 web/            the playground
 rig-*/ tools/   earlier rust work, kept for history
 ```

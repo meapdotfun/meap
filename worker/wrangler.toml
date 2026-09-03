@@ -1,0 +1,12 @@
+name = "meap-endpoint"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# One instance, one economy. SQLite backed so it runs on the free plan.
+[[durable_objects.bindings]]
+name = "ECONOMY"
+class_name = "Economy"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Economy"]

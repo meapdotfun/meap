@@ -295,6 +295,61 @@ test('replaying the action log reproduces the state exactly', () => {
   assert.notEqual(l.digest(), new Ledger({ playground: true }).digest());
 });
 
+test('a refused action leaves no trace, so ids stay reproducible', () => {
+  // Offer ids derive from the action counter. If a refusal advanced it, every
+  // id minted afterwards would differ from the one a replay produces, and the
+  // log would stop being replayable at the first accept_offer. This is the
+  // shape of a real failure: a live economy restarted and could not rebuild
+  // itself, because an agent had been refused between declaring a market and
+  // posting an offer on it.
+  const l = world();
+  const { market } = l.apply({ type: 'create_market', by: BORROWER, declaration: loanDeclaration(), at: T0 });
+
+  const seqBefore = l.seq;
+  const nowBefore = l.now;
+  assert.throws(() => l.apply({
+    type: 'transfer', by: BORROWER, to: LENDER, asset: 'USD', amount: 10 ** 12, at: T0 + 9 * DAY,
+  }), /needs/);
+  assert.equal(l.seq, seqBefore, 'a refusal must not advance the counter');
+  assert.equal(l.now, nowBefore, 'nor the clock');
+
+  const { offer } = l.apply({
+    type: 'post_offer', by: BORROWER, market, leg: 'REPAID', stake: 150_000, ask: 100_000, at: T0,
+  });
+  l.apply({ type: 'accept_offer', by: LENDER, offer, at: T0 });
+
+  const replayed = Ledger.replay(l.log, { playground: true });
+  assert.equal(replayed.digest(), l.digest(), 'the log must replay across a refusal');
+  assert.ok(replayed.offers.has(offer), 'the offer id must survive the replay');
+});
+
+test('taking an offer you cannot fully afford moves nothing', () => {
+  // The ask was debited before the counter stake was checked, so an acceptor
+  // who could pay one but not both ended up having paid the first while the
+  // action was refused. Rolling back the counters cannot undo a transfer.
+  const l = world(120_000);
+  const { market } = l.apply({
+    type: 'create_market', by: INSURER, at: T0,
+    declaration: {
+      collateral: { asset: 'USD' },
+      positions: { kind: 'binary' },
+      resolution: { kind: 'attestation', by: [ORACLE], quorum: 1 },
+      payoff: { kind: 'winner_take_all' },
+      mechanism: { kind: 'bilateral' },
+      expiry: T0 + DAY,
+    },
+  });
+  const { offer } = l.apply({
+    type: 'post_offer', by: BORROWER, market, leg: 'YES',
+    stake: 10_000, ask: 100_000, counter_stake: 100_000, at: T0,
+  });
+
+  const before = { lender: l.balance(LENDER, 'USD'), borrower: l.balance(BORROWER, 'USD') };
+  assert.throws(() => l.apply({ type: 'accept_offer', by: LENDER, offer, at: T0 }), /costs 200000/);
+  assert.equal(l.balance(LENDER, 'USD'), before.lender, 'nothing left the acceptor');
+  assert.equal(l.balance(BORROWER, 'USD'), before.borrower, 'and nothing reached the poster');
+});
+
 test('the clock never runs backwards', () => {
   const l = world();
   l.apply({ type: 'transfer', by: BORROWER, to: LENDER, asset: 'USD', amount: 1, at: T0 + 5 * DAY });

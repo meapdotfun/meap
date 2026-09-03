@@ -45,9 +45,15 @@ export class Ledger {
    * @param {object} opts
    * @param {boolean} opts.playground  allow `mint`, i.e. run with consequences
    *   off. The same verb set either way; only the funding differs.
+   * @param {object|null} opts.opening  {asset, amount} credited once when an
+   *   address first joins. This is how a shared economy funds arrivals without
+   *   opening `mint` to everyone: one caller able to mint without limit makes
+   *   every balance meaningless, whereas a grant fixed at join is equal for
+   *   all, unrepeatable, and replayed from the log like anything else.
    */
-  constructor({ playground = false } = {}) {
+  constructor({ playground = false, opening = null } = {}) {
     this.playground = playground;
+    this.opening = opening;
     this.agents = new Map();
     this.markets = new Map();
     this.offers = new Map();
@@ -141,14 +147,35 @@ export class Ledger {
     need(fn, `unknown action ${type}`);
     if (type !== 'join') this.account(by);
 
+    // The clock and the counter advance for the handler to see, then roll back
+    // if it refuses. A refused action is not logged, so anything it moved would
+    // be invisible to a replay: the counter feeds offer ids, and a refusal
+    // between two accepted actions would otherwise shift every id after it and
+    // make the log unreplayable. Found by restarting a live economy and
+    // watching accept_offer fail against an id that no longer existed.
+    const wasNow = this.now;
+    const wasSeq = this.seq;
     this.now = Math.max(this.now, at);
     this.seq += 1;
-    const result = fn.call(this, action);
+    let result;
+    try {
+      result = fn.call(this, action);
+    } catch (e) {
+      this.now = wasNow;
+      this.seq = wasSeq;
+      throw e;
+    }
     this.log.push(action);
     return { seq: this.seq, ...result };
   }
 
-  /** Rebuild from an action log. Must reproduce the digest exactly. */
+  /**
+   * Rebuild from an action log. Must reproduce the digest exactly.
+   *
+   * `opts` has to match the ledger the log came from, `opening` included: the
+   * grant is applied by the join handler, so replaying with a different grant
+   * yields a different and equally self consistent economy.
+   */
   static replay(log, opts = {}) {
     const l = new Ledger(opts);
     for (const a of log) l.apply(a);
@@ -197,7 +224,10 @@ const HANDLERS = {
       joined: this.seq,
       stats: { declared: 0, positions: 0, settled: 0, defaults: 0, attestations: 0, forecloses: 0 },
     });
-    return { address: a.by, existing: false };
+    // Granted inside `join` rather than as a verb of its own, so it cannot be
+    // called twice: joining is idempotent and this rides along with it.
+    if (this.opening) this._credit(a.by, this.opening.asset, this.opening.amount);
+    return { address: a.by, existing: false, granted: this.opening ?? null };
   },
 
   /**
@@ -334,6 +364,15 @@ const HANDLERS = {
     const legs = m.declaration.positions.legs;
     const other = legs.find((l) => l !== o.leg);
     need(other, 'a bilateral offer needs a market with two legs');
+
+    // Checked as one sum before anything moves. Debiting the ask first and the
+    // counter stake second would, for an acceptor who can afford one but not
+    // both, leave the ask already transferred when the second debit threw.
+    // Rolling the counters back does not undo a transfer, so the guard has to
+    // come first.
+    const owed = o.ask + o.counterStake;
+    const have = this.account(a.by).balances.get(m.asset) ?? 0;
+    need(have >= owed, `taking this offer costs ${owed} ${m.asset} and you hold ${have}`);
 
     if (o.ask > 0) { this._debit(a.by, m.asset, o.ask); this._credit(o.from, m.asset, o.ask); }
     if (o.counterStake > 0) { this._debit(a.by, m.asset, o.counterStake); m.escrow += o.counterStake; }
