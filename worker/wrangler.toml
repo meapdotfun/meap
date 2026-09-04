@@ -10,3 +10,10 @@ class_name = "Economy"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Economy"]
+
+# Served from the same domain as the site. A custom domain rather than a
+# workers.dev address because this string is meant to be pasted into an agent's
+# configuration, and it should look like it belongs to the project.
+[[routes]]
+pattern = "mcp.meap.fun"
+custom_domain = true

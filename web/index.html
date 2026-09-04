@@ -50,6 +50,18 @@
   .links a:hover { color: #fff; }
   .links .icon { width: 1.15em; height: 1.15em; fill: currentColor; display: block; }
 
+  /* The endpoint, as something to take rather than somewhere to go. A button
+     because it copies and does not navigate, and monospace because it is an
+     address that gets pasted into a configuration file. */
+  .copy {
+    font: inherit; font-family: var(--mono); font-size: .72em; letter-spacing: -.01em;
+    color: inherit; opacity: .78; background: none; border: 0; padding: 0;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .copy:hover, .copy:focus-visible { opacity: 1; }
+  .copy.done { color: var(--lime); opacity: 1; }
+  .copy.failed { color: var(--warn); opacity: 1; }
+
   .credit {
     position: fixed; left: 1.7rem; bottom: 1.5rem; z-index: 10; margin: 0;
     font-size: .92rem; font-weight: 400; letter-spacing: -.01em;
@@ -61,14 +73,19 @@
   body[data-ui="light"] .mark { color: #14120C; text-shadow: 0 1px 10px rgba(255,255,255,.7); }
   body[data-ui="light"] .links { color: rgba(20,18,12,.68); text-shadow: 0 1px 8px rgba(255,255,255,.8); }
   body[data-ui="light"] .links a:hover { color: #14120C; }
+  body[data-ui="light"] .copy.done { color: #5C7304; }
   body[data-ui="light"] .credit { color: rgba(20,18,12,.66); text-shadow: 0 1px 8px rgba(255,255,255,.8); }
   body[data-ui="light"] .credit strong { color: #14120C; }
 
   @media (max-width: 720px) {
     .mark img { width: 56px; height: 56px; margin: -17px 0 0 -12px; }
     .credit { font-size: .8rem; }
-    .links { font-size: 1rem; gap: 1.2rem; }
+    .links { font-size: 1rem; gap: .9rem; }
+    .copy { font-size: .68em; }
   }
+  /* Below this the address crowds the mark, and copying an endpoint on a phone
+     is not what anyone is here to do. The icon stays. */
+  @media (max-width: 430px) { .copy { display: none; } }
 </style>
 </head>
 <body>
@@ -81,10 +98,48 @@
 <a class="mark" href="./" aria-label="MEAP"><img src="brand/mark-trans.png" alt="MEAP"></a>
 
 <nav class="links">
+  <button class="copy" type="button" data-copy="https://mcp.meap.fun/mcp"
+          title="The MCP endpoint. Click to copy.">mcp.meap.fun/mcp</button>
   <a href="https://github.com/meapdotfun/meap" title="GitHub" aria-label="GitHub"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
 </nav>
 
 <p class="credit">Routed through <strong>Robinhood Chain</strong></p>
+
+<script>
+  // Copy the endpoint. navigator.clipboard needs a secure context and can be
+  // refused outright, so the old selection trick stays as a fallback rather
+  // than letting the click silently do nothing.
+  (() => {
+    const btn = document.querySelector('.copy');
+    if (!btn) return;
+    const label = btn.textContent;
+    let timer;
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:-999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand('copy'); } catch { /* nothing left to try */ }
+        ta.remove();
+      }
+      // Say so either way. A click that silently does nothing reads as broken,
+      // and a refused clipboard is the one outcome the page cannot control.
+      btn.textContent = ok ? 'copied' : 'copy failed';
+      btn.classList.toggle('done', ok);
+      btn.classList.toggle('failed', !ok);
+      clearTimeout(timer);
+      timer = setTimeout(() => { btn.textContent = label; btn.classList.remove('done', 'failed'); }, 1300);
+    });
+  })();
+</script>
 
 <script type="module" src="play/app.js"></script>
 </body>
