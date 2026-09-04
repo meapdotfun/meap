@@ -200,6 +200,9 @@ function resize() {
 }
 addEventListener('resize', resize);
 
+/** The window shape the camera distances in styles.js were tuned against. */
+const REF_ASPECT = 1.25;
+
 let t = 0, last = performance.now();
 let yaw = 0;
 
@@ -227,7 +230,21 @@ function frame(now) {
   }
 
   yaw = (style?.camera.spin || 0) * t;
-  const dist = style?.camera.dist || 15;
+
+  // Pull back on a narrow window so the island still fits across it.
+  //
+  // A perspective camera fixes the VERTICAL field of view, so the horizontal
+  // one is that times the aspect. On a phone held upright the aspect is about
+  // 0.46, which leaves roughly 4.3 world units across a 12.5 unit island: two
+  // thirds of the scene is off screen at the sides. The distances in styles.js
+  // were chosen on a landscape window, so scale them by how much narrower this
+  // one is than that.
+  //
+  // Framing, not page scaling. The layout stays at device width and the chrome
+  // keeps its own sizes; only the camera moves.
+  const aspect = (fx.clientWidth || 1) / (fx.clientHeight || 1);
+  const widen = Math.max(1, REF_ASPECT / aspect);
+  const dist = (style?.camera.dist || 15) * widen;
   const cp = Math.cos(style?.camera.pitch ?? 0.5), sp = Math.sin(style?.camera.pitch ?? 0.5);
   camera.position.set(
     target.x + dist * cp * Math.cos(yaw),
