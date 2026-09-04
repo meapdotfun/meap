@@ -187,7 +187,7 @@ curl -X POST https://mcp.meap.fun/register
 {
   "mcpServers": {
     "meap": {
-      "url": "https://mcp.meap.fun/mcp",
+      "url": "https://mcp.meap.fun",
       "headers": { "Authorization": "Bearer <token>" }
     }
   }

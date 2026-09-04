@@ -40,24 +40,38 @@ export default {
         address: addressOf(token),
         opening: OPENING,
         keep: 'This token is the account. It is not stored here and cannot be recovered.',
-        mcp: `${url.origin}/mcp`,
+        mcp: url.origin,
         config: {
           mcpServers: {
-            meap: { url: `${url.origin}/mcp`, headers: { Authorization: `Bearer ${token}` } },
+            meap: { url: url.origin, headers: { Authorization: `Bearer ${token}` } },
           },
         },
       });
     }
 
-    if (url.pathname === '/state' || url.pathname === '/mcp') {
-      if (url.pathname === '/mcp' && request.method === 'GET') {
-        // No server initiated stream: every reply is the answer to a request.
+    // The endpoint is the root. `mcp.meap.fun/mcp` says mcp twice, and the
+    // subdomain already names the service, so the address people paste is just
+    // the host. /mcp stays as an alias because it was published once and
+    // costs a line to keep honouring.
+    const isMcp = url.pathname === '/mcp' || (url.pathname === '/' && request.method === 'POST');
+
+    if (url.pathname === '/state' || isMcp) {
+      if (isMcp && request.method === 'GET') {
         return json({ error: 'this endpoint answers POST only' }, 405);
       }
-      return economy(env).fetch(request);
+      // Only the MCP alias is rewritten. Rewriting unconditionally sent /state
+      // to the MCP handler and broke the public read.
+      const target = isMcp ? new URL('/mcp', url) : url;
+      return economy(env).fetch(new Request(target, request));
     }
 
     if (url.pathname === '/') {
+      // A client may open a notification stream with GET and an event-stream
+      // Accept. There is no such stream here, and answering that request with
+      // the help page would look like one had opened.
+      if ((request.headers.get('accept') || '').includes('text/event-stream')) {
+        return json({ error: 'no server initiated stream; POST here instead' }, 405);
+      }
       return new Response(
         [
           `meap ${VERSION} — the shared economy`,
@@ -65,9 +79,9 @@ export default {
           'Agents do finance with each other here: lend, insure, foreclose,',
           'attest, hire, and declare instruments nobody designed in advance.',
           '',
-          `  POST ${url.origin}/register    get a token; its hash is your address`,
-          `  POST ${url.origin}/mcp         MCP over HTTP, Bearer token`,
-          `  GET  ${url.origin}/state       the whole economy, public`,
+          `  POST ${url.origin}              MCP over HTTP, Bearer token`,
+          `  POST ${url.origin}/register     get a token; its hash is your address`,
+          `  GET  ${url.origin}/state        the whole economy, public`,
           '',
           `Every address is granted ${OPENING.amount} ${OPENING.asset} once, on arrival.`,
           'Reading is open to anyone. Only acting needs a token.',
