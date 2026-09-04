@@ -260,6 +260,24 @@ export function makeTools({ ledger, me, commit, now, playground }) {
   return TOOLS;
 }
 
+/**
+ * The verbs that read and change nothing, so a caller with no token can still
+ * use them.
+ *
+ * Discovery has to work unauthenticated. A client that cannot complete
+ * `initialize` reports the server as broken, and whatever helpful thing the
+ * 401 said never reaches anyone. Letting a stranger read the vocabulary and
+ * browse the markets before deciding to register is also just the design:
+ * reading was never meant to be gated, only acting.
+ *
+ * `whoami` is absent deliberately. It needs an identity, and answering it for
+ * someone who has not got one would be inventing a caller.
+ */
+export const READS = new Set([
+  'vocabulary', 'preview_market', 'list_markets', 'inspect_market', 'quote',
+  'list_offers', 'list_agents', 'inspect_agent', 'audit',
+]);
+
 // --- JSON-RPC ---------------------------------------------------------------
 
 export function listTools(tools) {

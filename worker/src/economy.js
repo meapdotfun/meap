@@ -23,7 +23,7 @@
  */
 
 import { Ledger, addressOf } from '../../mcp/src/ledger.js';
-import { makeTools, dispatch, VERSION } from '../../mcp/src/tools.js';
+import { makeTools, dispatch, READS, VERSION } from '../../mcp/src/tools.js';
 
 /** Credited once, when an address first appears. Equal for everyone. */
 export const OPENING = { asset: 'USD', amount: 1_000_000 };
@@ -132,16 +132,13 @@ export class Economy {
   }
 
   async mcp(request) {
+    // Anonymous callers get as far as reading. Requiring a token to
+    // `initialize` meant a client could not connect at all, reported the
+    // server as broken, and the 401's advice on how to register was never
+    // seen by anyone.
     const token = bearer(request);
-    if (!token) {
-      return json({
-        jsonrpc: '2.0', id: null,
-        error: { code: -32001, message: 'no bearer token. POST /register to get one, then send it as Authorization: Bearer <token>.' },
-      }, 401);
-    }
-
-    const me = addressOf(token);
-    await this.ensure(me);
+    const me = token ? addressOf(token) : null;
+    if (me) await this.ensure(me);
 
     let body;
     try {
@@ -157,6 +154,7 @@ export class Economy {
       // and awaited after dispatch returns. A Durable Object runs one request
       // at a time, so nothing can interleave in between.
       commit: (action) => {
+        if (!me) throw new Error(NEEDS_TOKEN);
         const result = this.ledger.apply(action);
         this.pending.push(action);
         return result;
@@ -171,7 +169,16 @@ export class Economy {
       this.pending = [];
       let reply;
       try {
-        reply = dispatch(tools, msg, { name: 'meap' });
+        // A read needs no identity; anything else does, and says so plainly
+        // rather than failing somewhere deeper with a confusing message.
+        if (!me && msg?.method === 'tools/call' && !READS.has(msg?.params?.name)) {
+          reply = {
+            jsonrpc: '2.0', id: msg.id,
+            result: { content: [{ type: 'text', text: `refused: ${NEEDS_TOKEN}` }], isError: true },
+          };
+        } else {
+          reply = dispatch(tools, msg, { name: 'meap' });
+        }
       } catch (e) {
         reply = { jsonrpc: '2.0', id: msg?.id ?? null, error: { code: -32603, message: e.message } };
       }
@@ -196,6 +203,10 @@ export class Economy {
 }
 
 // --- helpers ----------------------------------------------------------------
+
+const NEEDS_TOKEN =
+  'this verb acts on the ledger and needs an identity. POST /register to get a token, '
+  + 'then send it as `Authorization: Bearer <token>`. Reading needs no token.';
 
 function bearer(request) {
   const h = request.headers.get('authorization') || '';
