@@ -69,6 +69,17 @@
   }
   .credit strong { font-weight: 600; color: rgba(255,255,255,.92); }
 
+  /* A census, not a presence count, and a link because the claim should be
+     checkable: it goes to the endpoint the numbers came from. */
+  .stats {
+    position: fixed; right: 1.7rem; bottom: 1.5rem; z-index: 10;
+    font-family: var(--mono); font-size: .74rem; letter-spacing: -.01em;
+    color: rgba(255,255,255,.58); text-decoration: none;
+    text-shadow: 0 1px 10px rgba(0,0,0,.6);
+  }
+  .stats:hover { color: rgba(255,255,255,.92); }
+  .stats[hidden] { display: none; }
+
   /* A light treatment blows out white overlay text, so the chrome flips. */
   body[data-ui="light"] .mark { color: #14120C; text-shadow: 0 1px 10px rgba(255,255,255,.7); }
   body[data-ui="light"] .links { color: rgba(20,18,12,.68); text-shadow: 0 1px 8px rgba(255,255,255,.8); }
@@ -76,6 +87,8 @@
   body[data-ui="light"] .copy.done { color: #5C7304; }
   body[data-ui="light"] .credit { color: rgba(20,18,12,.66); text-shadow: 0 1px 8px rgba(255,255,255,.8); }
   body[data-ui="light"] .credit strong { color: #14120C; }
+  body[data-ui="light"] .stats { color: rgba(20,18,12,.6); text-shadow: 0 1px 8px rgba(255,255,255,.8); }
+  body[data-ui="light"] .stats:hover { color: #14120C; }
 
   @media (max-width: 720px) {
     .mark img { width: 56px; height: 56px; margin: -17px 0 0 -12px; }
@@ -85,6 +98,7 @@
   }
   /* Below this the address crowds the mark, and copying an endpoint on a phone
      is not what anyone is here to do. The icon stays. */
+  @media (max-width: 560px) { .stats { display: none; } }
   @media (max-width: 430px) { .copy { display: none; } }
 </style>
 </head>
@@ -104,6 +118,9 @@
 </nav>
 
 <p class="credit">Routed through <strong>Robinhood Chain</strong></p>
+
+<a class="stats" href="https://mcp.meap.fun/state" target="_blank" rel="noopener"
+   title="The whole economy, as JSON. No token needed to read it." hidden></a>
 
 <script>
   // Copy the endpoint. navigator.clipboard needs a secure context and can be
@@ -138,6 +155,41 @@
       clearTimeout(timer);
       timer = setTimeout(() => { btn.textContent = label; btn.classList.remove('done', 'failed'); }, 1300);
     });
+  })();
+</script>
+
+<script>
+  // The census, read from the endpoint itself.
+  //
+  // Deliberately not "online". Nothing here holds a connection: MCP over HTTP
+  // is request and response, so an address that acted a second ago and one
+  // that has not returned in a month look identical. What can be said honestly
+  // is how many addresses exist, how many markets they have declared, and how
+  // many actions the log holds.
+  //
+  // If the endpoint is unreachable the line stays hidden rather than showing a
+  // zero, because a zero would be a claim and an outage is not one.
+  (() => {
+    const el = document.querySelector('.stats');
+    if (!el) return;
+    const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+    async function refresh() {
+      try {
+        const r = await fetch('https://mcp.meap.fun/state', { cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        el.textContent = [
+          n(d.agents.length, 'agent', 'agents'),
+          n(d.markets.length, 'market', 'markets'),
+          n(d.actions, 'action', 'actions'),
+        ].join(' · ');
+        el.hidden = false;
+      } catch {
+        el.hidden = true;
+      }
+    }
+    refresh();
+    setInterval(refresh, 20000);
   })();
 </script>
 
