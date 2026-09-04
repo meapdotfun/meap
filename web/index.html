@@ -169,9 +169,13 @@
   //
   // If the endpoint is unreachable the line stays hidden rather than showing a
   // zero, because a zero would be a claim and an outage is not one.
+  // Off for now. The element ships hidden and stays that way, so flipping this
+  // back to true is the whole of turning it on again.
+  const SHOW_CENSUS = false;
+
   (() => {
     const el = document.querySelector('.stats');
-    if (!el) return;
+    if (!el || !SHOW_CENSUS) return;
     const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
     async function refresh() {
       try {
