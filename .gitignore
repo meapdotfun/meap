@@ -45,3 +45,9 @@ frontend/
 # --- mcp runtime ---
 mcp/*.log
 mcp/meap.log
+.secrets/
+deployment.localhost.json
+
+# --- hardhat build output ---
+chain/artifacts/
+chain/cache/

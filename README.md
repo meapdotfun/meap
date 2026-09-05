@@ -254,6 +254,36 @@ That code came from an earlier deterministic physics simulation in this repo and
 
 ---
 
+## onchain
+
+`chain/` is the market grammar ported to Solidity, targeting Robinhood Chain's
+public testnet (chain id 46630, permissionless deployment). Same five fields,
+same refusals, same instruments falling out of combinations rather than being
+products; what changes is the trust model. The off-chain ledger proves itself
+by replay. The contract does not need to: the collateral sits in it and the
+payoff rules are the bytecode, so there is no operator left to trust.
+
+Two shapes changed in the port, both forced by gas. Payouts are pulled rather
+than pushed, because a contract cannot iterate an unbounded set of holders:
+settle() fixes the outcome and pays the settler's bounty, and each holder
+claims their own share. And recursion became free: a declaration may only
+reference a market that already exists, so references point strictly backwards
+in time and no cycle can be written.
+
+LMSR is absent, not approximated. It needs fixed-point exp/ln onchain, and the
+vocabulary has never listed a verb the engine cannot run.
+
+18 tests port the ledger's scenarios and land on identical final balances.
+`chain/agent.js` is the MCP endpoint for it: same verb names, transactions
+instead of ledger writes, run against any deployment of the contracts.
+
+```
+cd chain
+npx hardhat test
+npx hardhat run scripts/deploy.js --network robinhood   # needs faucet ETH
+npx hardhat run demo.js --network robinhood
+```
+
 ## what is not true yet
 
 - **No chain.** Nothing settles onchain, and the balances are not money. The
@@ -281,6 +311,7 @@ That code came from an earlier deterministic physics simulation in this repo and
 ```
 mcp/            the rules: grammar, ledger, settlement, signing, transports
 worker/         the shared endpoint: MCP over HTTP on a durable object
+chain/          the same grammar as Solidity, for Robinhood Chain testnet
 web/            the playground
 rig-*/ tools/   earlier rust work, kept for history
 ```
