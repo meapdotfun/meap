@@ -22,7 +22,7 @@
  * wants per request signatures, which stock MCP clients cannot yet produce.
  */
 
-import { Ledger, addressOf, addressOfKey } from '../../mcp/src/ledger.js';
+import { Ledger, addressOf, addressOfKey, addressOfSystem } from '../../mcp/src/ledger.js';
 import { verifyRequest, SKEW_MS } from '../../mcp/src/sign.js';
 import { makeTools, dispatch, READS, VERSION } from '../../mcp/src/tools.js';
 
@@ -36,8 +36,18 @@ export const OPENING = { asset: 'USD', amount: 1_000_000 };
  * registrations against the live endpoint added three million out of nothing.
  * A fixed pot turns that into a drain on something finite, and makes the total
  * on the ledger a number that means something.
+ *
+ * The address comes from addressOfSystem, and that is not a style choice. The
+ * first version derived it with addressOf, the same function bearer tokens go
+ * through, so presenting the string 'meap:treasury:v1' as a token WAS the
+ * treasury: the whole pot, spendable by anyone who read the source. The system
+ * namespace is one no credential can land in.
+ *
+ * taper 250 means a grant is at most 1/250 of what remains: full sized while
+ * the pot is fresh, decaying under a registration flood instead of racing to
+ * empty. The faucet can be farmed for less and less, never for everything.
  */
-export const TREASURY = { address: addressOf('meap:treasury:v1'), asset: 'USD', amount: 500_000_000 };
+export const TREASURY = { address: addressOfSystem('treasury'), asset: 'USD', amount: 500_000_000, taper: 250 };
 
 const KEY = (n) => `a:${String(n).padStart(12, '0')}`;
 
@@ -211,7 +221,15 @@ export class Economy {
     // this server sees it on every call.
     let me = null;
     let how = null;
+    let token = null;
     const key = request.headers.get('x-meap-key');
+    if (!key) {
+      try {
+        token = bearer(request);
+      } catch (e) {
+        return json({ jsonrpc: '2.0', id: null, error: { code: -32003, message: e.message } }, 401);
+      }
+    }
     if (key) {
       try {
         await verifyRequest({
@@ -230,9 +248,9 @@ export class Economy {
       }
       me = addressOfKey(key);
       how = 'signature';
-    } else {
-      const token = bearer(request);
-      if (token) { me = addressOf(token); how = 'bearer'; }
+    } else if (token) {
+      me = addressOf(token);
+      how = 'bearer';
     }
     if (me) await this.ensure(me);
 
@@ -307,8 +325,15 @@ const NEEDS_TOKEN =
 function bearer(request) {
   const h = request.headers.get('authorization') || '';
   const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  return m ? m[1].trim() : null;
+  const t = m ? m[1].trim() : null;
+  // A short token is a guessable one, and a guessable token is somebody's
+  // address. /register issues 64 hex characters; anything under 32 is someone
+  // trying labels, which is exactly the treasury bug generalised.
+  if (t && t.length < 32) throw new BadToken('bearer tokens are at least 32 characters; POST /register issues one');
+  return t;
 }
+
+class BadToken extends Error {}
 
 export function cors() {
   return {

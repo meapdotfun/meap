@@ -57,6 +57,20 @@ export function addressOfKey(publicKeyHex) {
   return `ag_${new Digest().text(`key:${String(publicKeyHex).toLowerCase()}`).hex()}`;
 }
 
+/**
+ * An address no credential can authenticate as.
+ *
+ * The treasury was originally derived with addressOf, which is the same
+ * function bearer tokens flow through, so presenting the treasury's label AS a
+ * token made you the treasury: the entire pot was spendable by anyone who read
+ * the source. Repo-readable string, live money. This namespace exists so that
+ * system accounts live where neither a bearer token (agent:) nor a public key
+ * (key:) can ever land.
+ */
+export function addressOfSystem(name) {
+  return `ag_${new Digest().text(`system:${name}`).hex()}`;
+}
+
 export class Ledger {
   /**
    * @param {object} opts
@@ -66,12 +80,16 @@ export class Ledger {
    *   address first joins. This is how a shared economy funds arrivals without
    *   opening `mint` to everyone: a grant fixed at join is equal for all,
    *   unrepeatable, and replayed from the log like anything else.
-   * @param {object|null} opts.treasury  {address, asset, amount} holding the
-   *   entire supply at genesis. Grants are paid out of it rather than minted,
-   *   which is what stops registration being a money press: an attacker who
-   *   registers ten thousand addresses drains a fixed pot instead of creating
-   *   ten billion from nothing. Without it a shared ledger has no supply, only
-   *   a faucet.
+   * @param {object|null} opts.treasury  {address, asset, amount, taper}
+   *   holding the entire supply at genesis. Grants are paid out of it rather
+   *   than minted, which is what stops registration being a money press: an
+   *   attacker who registers ten thousand addresses drains a fixed pot instead
+   *   of creating ten billion from nothing. `taper` bounds each grant to
+   *   held/taper, so the faucet also cannot be emptied outright: harvesting
+   *   gets exponentially less rewarding as the pot shrinks, and registration
+   *   floods decay instead of racing to zero. The address must come from
+   *   addressOfSystem, never addressOf, or the pot is spendable by whoever
+   *   presents its label as a bearer token.
    */
   constructor({ playground = false, opening = null, treasury = null } = {}) {
     this.playground = playground;
@@ -265,12 +283,14 @@ const HANDLERS = {
     if (this.opening) {
       const { asset, amount } = this.opening;
       if (this.treasury) {
-        // Paid, not printed. When the treasury is empty an arrival gets
-        // nothing and has to be paid by somebody who already holds some,
-        // which is a real constraint rather than an error.
+        // Paid, not printed, and tapered: a grant is at most 1/taper of what
+        // remains, so a sybil flood harvests a decaying pot rather than
+        // emptying it, and when it runs low an arrival gets little and has to
+        // be paid by somebody who already holds some. Deterministic from
+        // ledger state alone, so replay needs no record of the policy.
         const pot = this.agents.get(this.treasury.address);
         const have = pot.balances.get(asset) ?? 0;
-        const give = Math.min(have, amount);
+        const give = Math.min(amount, Math.floor(have / (this.treasury.taper || 1)));
         if (give > 0) {
           pot.balances.set(asset, have - give);
           this._credit(a.by, asset, give);

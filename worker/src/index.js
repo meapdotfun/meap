@@ -28,7 +28,9 @@ export { Economy };
  * rules. 'main' was the version with no treasury, where every arrival minted
  * its own grant.
  */
-const economy = (env) => env.ECONOMY.get(env.ECONOMY.idFromName('v2'));
+const economy = (env) => env.ECONOMY.get(env.ECONOMY.idFromName('v3'));
+// v2's treasury address was reachable by presenting its label as a bearer
+// token; that genesis is abandoned rather than reinterpreted.
 
 export default {
   async fetch(request, env) {
@@ -94,7 +96,7 @@ export default {
           `  GET  ${url.origin}/state        the whole economy, public`,
           `  GET  ${url.origin}/log          every action, replay it to check the digest`,
           '',
-          `Every address is granted ${OPENING.amount} ${OPENING.asset} once, on arrival.`,
+          `Every address is granted up to ${OPENING.amount} ${OPENING.asset} once, on arrival; grants taper as the pot drains.`,
           'Reading is open to anyone. Only acting needs a token.',
           '',
         ].join('\n'),

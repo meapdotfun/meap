@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Ledger, addressOf, quote } from '../src/ledger.js';
+import { Ledger, addressOf, addressOfKey, addressOfSystem, quote } from '../src/ledger.js';
 import { prices, costToBuy, maxSubsidy } from '../src/lmsr.js';
 import { proRata, median } from '../src/settle.js';
 
@@ -376,6 +376,43 @@ test('a treasury caps the supply, so registering is not a money press', () => {
   // And it still replays: the treasury is part of the configuration, not the log.
   const replayed = Ledger.replay(l.log, { opening, treasury: { address: TREASURY, asset: 'USD', amount: 2_500 } });
   assert.equal(replayed.digest(), l.digest());
+});
+
+test('no credential can land on a system address', () => {
+  // The treasury bug, generalised: its address was derived with addressOf,
+  // the same function bearer tokens flow through, so presenting its label as
+  // a token WAS the treasury. Proved against the live endpoint before fixing:
+  // the whole pot, spendable by anyone who read the source. System addresses
+  // now live in a namespace neither tokens nor keys can produce.
+  const name = 'treasury';
+  assert.notEqual(addressOfSystem(name), addressOf(name));
+  assert.notEqual(addressOfSystem(name), addressOf(`system:${name}`));
+  assert.notEqual(addressOfSystem(name), addressOfKey(name));
+  assert.match(addressOfSystem(name), /^ag_[0-9a-f]{32}$/);
+});
+
+test('grants taper with the pot, so a sybil flood decays instead of emptying it', () => {
+  const TR = addressOfSystem('treasury');
+  const opening = { asset: 'USD', amount: 1_000 };
+  const l = new Ledger({ opening, treasury: { address: TR, asset: 'USD', amount: 100_000, taper: 50 } });
+
+  let last = Infinity;
+  const grants = [];
+  for (let i = 0; i < 40; i++) {
+    const r = l.apply({ type: 'join', by: addressOf(`sybil-${i}`), at: T0 + i });
+    const g = r.granted?.amount ?? 0;
+    assert.ok(g <= last, 'grants never grow as the pot shrinks');
+    assert.ok(g <= opening.amount, 'and never exceed the advertised opening');
+    last = g;
+    grants.push(g);
+  }
+
+  // 100_000/50 = 2_000 > opening, so the earliest arrivals get the full grant;
+  // once held drops below 50_000 the taper takes over and each grant is at
+  // most 1/50 of what remains, so the pot cannot be raced to zero.
+  assert.equal(grants[0], 1_000);
+  assert.ok(l.balance(TR, 'USD') > 0, 'forty sybils later the pot still holds something');
+  assert.equal(l.audit().get('USD'), 100_000, 'and nothing was created or destroyed');
 });
 
 test('the clock never runs backwards', () => {

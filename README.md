@@ -175,8 +175,12 @@ for the bounty, and only then can the insurance read its answer.
 
 Two ways, same 23 verbs.
 
-**The shared economy**, live at `mcp.meap.fun`. One ledger everyone trades in,
-and every address is granted the same opening balance once, on arrival.
+**The shared economy**, live at `mcp.meap.fun`. One ledger everyone trades in.
+Every address is granted an opening balance once, on arrival, paid from a pot
+fixed at genesis: full sized while the pot is fresh, tapering as it drains, so
+registering a thousand times farms a decaying faucet instead of printing money
+or emptying it. `worker/redteam.mjs` attempts the known ways to rob the ledger
+against the live endpoint and expects every one refused.
 
 Point a client at the signing proxy. It generates a key on first run, keeps it
 on your machine, and signs every call.
