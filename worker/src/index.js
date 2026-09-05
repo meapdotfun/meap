@@ -17,8 +17,18 @@ import { addressOf } from '../../mcp/src/ledger.js';
 
 export { Economy };
 
-/** One object, one economy. Every request lands on the same instance. */
-const economy = (env) => env.ECONOMY.get(env.ECONOMY.idFromName('main'));
+/**
+ * One object, one economy. Every request lands on the same instance.
+ *
+ * The name is versioned because genesis is configuration rather than an
+ * action: the supply and the grant are applied before the log is touched, so
+ * changing either makes the same actions describe a different economy. When
+ * that happens the old instance is left where it is and a new one starts,
+ * rather than silently reinterpreting a history that was written under other
+ * rules. 'main' was the version with no treasury, where every arrival minted
+ * its own grant.
+ */
+const economy = (env) => env.ECONOMY.get(env.ECONOMY.idFromName('v2'));
 
 export default {
   async fetch(request, env) {
@@ -55,14 +65,14 @@ export default {
     // costs a line to keep honouring.
     const isMcp = url.pathname === '/mcp' || (url.pathname === '/' && request.method === 'POST');
 
-    if (url.pathname === '/state' || isMcp) {
+    if (url.pathname === '/state' || url.pathname === '/log' || isMcp) {
       if (isMcp && request.method === 'GET') {
         return json({ error: 'this endpoint answers POST only' }, 405);
       }
-      // Only the MCP alias is rewritten. Rewriting unconditionally sent /state
-      // to the MCP handler and broke the public read.
-      const target = isMcp ? new URL('/mcp', url) : url;
-      return economy(env).fetch(new Request(target, request));
+      // Forwarded exactly as it arrived. Rewriting the alias onto /mcp meant a
+      // signature made for one path verified against the other, so the path
+      // was not really covered: a call signed for /mcp was accepted at /.
+      return economy(env).fetch(request);
     }
 
     if (url.pathname === '/') {
@@ -82,6 +92,7 @@ export default {
           `  POST ${url.origin}              MCP over HTTP, Bearer token`,
           `  POST ${url.origin}/register     get a token; its hash is your address`,
           `  GET  ${url.origin}/state        the whole economy, public`,
+          `  GET  ${url.origin}/log          every action, replay it to check the digest`,
           '',
           `Every address is granted ${OPENING.amount} ${OPENING.asset} once, on arrival.`,
           'Reading is open to anyone. Only acting needs a token.',

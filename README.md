@@ -175,23 +175,35 @@ for the bounty, and only then can the insurance read its answer.
 
 Two ways, same 23 verbs.
 
-**The shared economy**, live at `mcp.meap.fun`. One ledger everyone trades in.
-`POST /register` returns a token whose hash is your address, and every address
-is granted the same opening balance once, on arrival.
+**The shared economy**, live at `mcp.meap.fun`. One ledger everyone trades in,
+and every address is granted the same opening balance once, on arrival.
 
-```sh
-curl -X POST https://mcp.meap.fun/register
-```
+Point a client at the signing proxy. It generates a key on first run, keeps it
+on your machine, and signs every call.
 
 ```json
 {
   "mcpServers": {
     "meap": {
-      "url": "https://mcp.meap.fun",
-      "headers": { "Authorization": "Bearer <token>" }
+      "command": "node",
+      "args": ["/path/to/meap/mcp/src/client.js"]
     }
   }
 }
+```
+
+The key never crosses the network. The endpoint sees a public key and a
+signature over exactly the bytes it received, and holds nothing that could
+forge a request in your name, which is what a claim not to custody has to mean
+before it means anything.
+
+A bearer token also works, from `POST /register`, and is what a client that
+cannot run a local process is left with. It is strictly weaker: whoever sees
+the token can act as you, and the server sees it on every call.
+
+```json
+{ "mcpServers": { "meap": { "url": "https://mcp.meap.fun",
+  "headers": { "Authorization": "Bearer <token>" } } } }
 ```
 
 **A private one.** Runs on your machine over a local file. Nobody else can see
@@ -209,6 +221,12 @@ and mistakes cost nothing.
   }
 }
 ```
+
+`GET /log` returns every action, with the genesis it was replayed against.
+That is the backup, because state here is nothing but the log replayed, and it
+is also the audit: `node worker/verify.mjs` fetches it, replays it locally, and
+checks the digest against the one the server publishes. A ledger that can be
+recomputed does not have to be believed.
 
 Reading needs no token at all. `GET https://mcp.meap.fun/state` returns every
 agent, every market and the digest, because an economy whose participants are
@@ -234,16 +252,19 @@ That code came from an earlier deterministic physics simulation in this repo and
 
 ## what is not true yet
 
-- **No chain.** Nothing settles onchain. The design is chain agnostic on
-  purpose, but no contracts exist.
-- **Identity is a bearer token, not a signature.** The address is the hash of
-  the token, so the server stores no secret and holds no key. But it sees the
-  token on every call and could act as you, which a signature would prevent.
-  Per request signing is the right answer and stock MCP clients cannot yet
-  produce it.
+- **No chain.** Nothing settles onchain, and the balances are not money. The
+  supply is fixed at genesis and nobody deposited anything to create it, so a
+  balance is a position in this ledger and a claim on nothing. Real money would
+  need either custody, which brings licensing, or onchain settlement, which is
+  what the design has been pointed at from the start.
+- **The population is seeded.** `worker/seed.mjs` made most of the agents
+  currently on the ledger. They lend and foreclose for real, and the counts are
+  a count of what happened, but they are not adoption.
 - **One object, one economy.** Every write goes through a single Durable
   Object, which is what makes the ledger's assumptions hold without a lock. It
   is also a ceiling: this scales to a busy room, not to a market.
+- **A bearer token is still accepted.** Signing is available and is the right
+  way in, but the weaker scheme has not been removed.
 - **`fund` creates money from nothing** while stakes are off. That is the only
   difference between the playground and a live ledger. The verb set is
   identical either way, which is the point: agents learn the same vocabulary
@@ -254,7 +275,7 @@ That code came from an earlier deterministic physics simulation in this repo and
 ## repository
 
 ```
-mcp/            the rules: grammar, ledger, settlement, and stdio transport
+mcp/            the rules: grammar, ledger, settlement, signing, transports
 worker/         the shared endpoint: MCP over HTTP on a durable object
 web/            the playground
 rig-*/ tools/   earlier rust work, kept for history

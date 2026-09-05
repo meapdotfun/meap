@@ -22,11 +22,22 @@
  * wants per request signatures, which stock MCP clients cannot yet produce.
  */
 
-import { Ledger, addressOf } from '../../mcp/src/ledger.js';
+import { Ledger, addressOf, addressOfKey } from '../../mcp/src/ledger.js';
+import { verifyRequest, SKEW_MS } from '../../mcp/src/sign.js';
 import { makeTools, dispatch, READS, VERSION } from '../../mcp/src/tools.js';
 
 /** Credited once, when an address first appears. Equal for everyone. */
 export const OPENING = { asset: 'USD', amount: 1_000_000 };
+
+/**
+ * The entire supply, held at genesis and paid out as arrivals join.
+ *
+ * Registration used to mint its own grant, which made it a money press: three
+ * registrations against the live endpoint added three million out of nothing.
+ * A fixed pot turns that into a drain on something finite, and makes the total
+ * on the ledger a number that means something.
+ */
+export const TREASURY = { address: addressOf('meap:treasury:v1'), asset: 'USD', amount: 500_000_000 };
 
 const KEY = (n) => `a:${String(n).padStart(12, '0')}`;
 
@@ -51,7 +62,7 @@ export class Economy {
     if (this.ledger) return;
     await this.state.blockConcurrencyWhile(async () => {
       if (this.ledger) return;
-      const l = new Ledger({ playground: false, opening: OPENING });
+      const l = new Ledger({ playground: false, opening: OPENING, treasury: TREASURY });
       let n = 0;
       let after;
       for (;;) {
@@ -86,6 +97,29 @@ export class Economy {
     return result;
   }
 
+  /**
+   * Nonces already spent, so a captured request cannot be sent twice.
+   *
+   * Only kept for the width of the clock skew window, because outside it the
+   * timestamp check refuses the request anyway and the nonce is dead weight.
+   */
+  nonces() {
+    const store = this.state.storage;
+    return {
+      has: async (n) => (await store.get(`n:${n}`)) !== undefined,
+      add: async (n, t) => {
+        await store.put(`n:${n}`, t);
+        // Opportunistic sweep; there is no cron here and this is cheap.
+        if (Math.abs(t) % 32 === 0) {
+          const old = await store.list({ prefix: 'n:', limit: 200 });
+          const cutoff = Date.now() - SKEW_MS * 2;
+          const dead = [...old].filter(([, when]) => when < cutoff).map(([k]) => k);
+          if (dead.length) await store.delete(dead);
+        }
+      },
+    };
+  }
+
   /** Join on first contact, which is also when the opening grant lands. */
   async ensure(address) {
     if (!this.ledger.agents.has(address)) {
@@ -98,7 +132,12 @@ export class Economy {
     const url = new URL(request.url);
 
     if (url.pathname === '/state') return this.publicState();
-    if (url.pathname === '/mcp') return this.mcp(request);
+    if (url.pathname === '/log') return this.exportLog();
+    // Both spellings, and each verifies against the path the caller actually
+    // signed, rather than one being rewritten into the other.
+    if (url.pathname === '/mcp' || (url.pathname === '/' && request.method === 'POST')) {
+      return this.mcp(request);
+    }
     return json({ error: 'not found' }, 404);
   }
 
@@ -116,6 +155,9 @@ export class Economy {
       actions: l.log.length,
       totals: Object.fromEntries(l.audit()),
       opening: OPENING,
+      // The supply, so a reader can check the totals without fetching the log.
+      // It never moves: grants are paid out of it, not printed alongside it.
+      supply: { asset: TREASURY.asset, amount: TREASURY.amount, held: l.balance(TREASURY.address, TREASURY.asset) },
       agents: [...l.agents.values()].map((a) => ({
         address: a.address,
         balances: Object.fromEntries(a.balances),
@@ -131,18 +173,72 @@ export class Economy {
     });
   }
 
+  /**
+   * The whole log, plus the genesis it was replayed against.
+   *
+   * This is the backup. State here is whatever replaying the log produces, so
+   * a copy of the log is a complete copy of the economy, and anyone can hold
+   * one. It is also the audit: replay it, compare the digest against /state,
+   * and the ledger has proved itself rather than asked to be believed.
+   *
+   * Genesis travels with it because the treasury is configuration rather than
+   * an action. A log replayed against a different supply is a different and
+   * equally self consistent economy.
+   */
+  exportLog() {
+    return json({
+      genesis: { opening: OPENING, treasury: TREASURY },
+      digest: this.ledger.digest(),
+      actions: this.ledger.log,
+    });
+  }
+
   async mcp(request) {
-    // Anonymous callers get as far as reading. Requiring a token to
-    // `initialize` meant a client could not connect at all, reported the
-    // server as broken, and the 401's advice on how to register was never
-    // seen by anyone.
-    const token = bearer(request);
-    const me = token ? addressOf(token) : null;
+    // The body is read once, as text, because a signature covers the exact
+    // bytes that arrived. Re-serialising the parsed object would change
+    // whitespace and key order and verify against nothing.
+    const raw = await request.text();
+
+    // Two ways to be somebody, and they are not equal.
+    //
+    // A signature is the real one: the private key never leaves the caller,
+    // this server sees only a public key and a signature over what it was
+    // sent, and it holds nothing that could forge a request in your name.
+    //
+    // A bearer token still works because it is what the first version shipped
+    // with and it is fine for a playground. It is strictly weaker, and the
+    // difference is not subtle: whoever sees the token can act as you, and
+    // this server sees it on every call.
+    let me = null;
+    let how = null;
+    const key = request.headers.get('x-meap-key');
+    if (key) {
+      try {
+        await verifyRequest({
+          publicKey: key,
+          time: request.headers.get('x-meap-time'),
+          nonce: request.headers.get('x-meap-nonce'),
+          signature: request.headers.get('x-meap-sig'),
+          method: request.method,
+          path: new URL(request.url).pathname,
+          body: raw,
+          now: Date.now(),
+          seen: this.nonces(),
+        });
+      } catch (e) {
+        return json({ jsonrpc: '2.0', id: null, error: { code: -32002, message: `signature refused: ${e.message}` } }, 401);
+      }
+      me = addressOfKey(key);
+      how = 'signature';
+    } else {
+      const token = bearer(request);
+      if (token) { me = addressOf(token); how = 'bearer'; }
+    }
     if (me) await this.ensure(me);
 
     let body;
     try {
-      body = await request.json();
+      body = JSON.parse(raw);
     } catch {
       return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }, 400);
     }

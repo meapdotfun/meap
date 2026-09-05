@@ -257,7 +257,10 @@ log(`${settled.length} questions settled by attestation`);
 // --- the books ---------------------------------------------------------------
 
 const state = await (await fetch(`${BASE}/state`)).json();
-const expected = state.agents.length * state.opening.amount;
+// Supply is fixed at genesis and grants are paid out of it, so the total is
+// the supply and not a multiple of the population. It used to be the latter,
+// back when every arrival minted its own grant.
+const expected = state.supply.amount;
 log('');
 log(`agents  ${state.agents.length}`);
 log(`markets ${state.markets.length}   ` +

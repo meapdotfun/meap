@@ -35,9 +35,26 @@ const need = (cond, msg) => { if (!cond) throw new Refused(msg); };
 const isInt = (x) => Number.isInteger(x);
 const isAmt = (x) => Number.isInteger(x) && x > 0 && x <= Number.MAX_SAFE_INTEGER;
 
-/** A stable address for a label. Real deployments derive this from a key. */
+/**
+ * A stable address for a label.
+ *
+ * Whatever the label is, is the account: a shared deployment passes a bearer
+ * secret so that guessing the label is as hard as guessing the secret. That is
+ * still weaker than a key, because whoever receives it can use it.
+ */
 export function addressOf(seed) {
   return `ag_${new Digest().text(`agent:${seed}`).hex()}`;
+}
+
+/**
+ * An address derived from an ed25519 public key.
+ *
+ * Separately namespaced from `addressOf` so a key and a label can never land
+ * on the same address, which would let the weaker scheme spend the stronger
+ * one's balance.
+ */
+export function addressOfKey(publicKeyHex) {
+  return `ag_${new Digest().text(`key:${String(publicKeyHex).toLowerCase()}`).hex()}`;
 }
 
 export class Ledger {
@@ -47,19 +64,37 @@ export class Ledger {
    *   off. The same verb set either way; only the funding differs.
    * @param {object|null} opts.opening  {asset, amount} credited once when an
    *   address first joins. This is how a shared economy funds arrivals without
-   *   opening `mint` to everyone: one caller able to mint without limit makes
-   *   every balance meaningless, whereas a grant fixed at join is equal for
-   *   all, unrepeatable, and replayed from the log like anything else.
+   *   opening `mint` to everyone: a grant fixed at join is equal for all,
+   *   unrepeatable, and replayed from the log like anything else.
+   * @param {object|null} opts.treasury  {address, asset, amount} holding the
+   *   entire supply at genesis. Grants are paid out of it rather than minted,
+   *   which is what stops registration being a money press: an attacker who
+   *   registers ten thousand addresses drains a fixed pot instead of creating
+   *   ten billion from nothing. Without it a shared ledger has no supply, only
+   *   a faucet.
    */
-  constructor({ playground = false, opening = null } = {}) {
+  constructor({ playground = false, opening = null, treasury = null } = {}) {
     this.playground = playground;
     this.opening = opening;
+    this.treasury = treasury;
     this.agents = new Map();
     this.markets = new Map();
     this.offers = new Map();
     this.log = [];
     this.seq = 0;
     this.now = 0;
+
+    // Genesis. Not an action, because nothing happened: this is the supply
+    // existing. It is part of the configuration, so a replay reconstructs it
+    // before touching the log and lands on the same digest.
+    if (treasury) {
+      this.agents.set(treasury.address, {
+        address: treasury.address,
+        balances: new Map([[treasury.asset, treasury.amount]]),
+        joined: 0,
+        stats: { declared: 0, positions: 0, settled: 0, defaults: 0, attestations: 0, forecloses: 0 },
+      });
+    }
   }
 
   // --- reads ----------------------------------------------------------------
@@ -226,8 +261,27 @@ const HANDLERS = {
     });
     // Granted inside `join` rather than as a verb of its own, so it cannot be
     // called twice: joining is idempotent and this rides along with it.
-    if (this.opening) this._credit(a.by, this.opening.asset, this.opening.amount);
-    return { address: a.by, existing: false, granted: this.opening ?? null };
+    let granted = null;
+    if (this.opening) {
+      const { asset, amount } = this.opening;
+      if (this.treasury) {
+        // Paid, not printed. When the treasury is empty an arrival gets
+        // nothing and has to be paid by somebody who already holds some,
+        // which is a real constraint rather than an error.
+        const pot = this.agents.get(this.treasury.address);
+        const have = pot.balances.get(asset) ?? 0;
+        const give = Math.min(have, amount);
+        if (give > 0) {
+          pot.balances.set(asset, have - give);
+          this._credit(a.by, asset, give);
+          granted = { asset, amount: give };
+        }
+      } else {
+        this._credit(a.by, asset, amount);
+        granted = { asset, amount };
+      }
+    }
+    return { address: a.by, existing: false, granted };
   },
 
   /**

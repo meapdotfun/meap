@@ -350,6 +350,34 @@ test('taking an offer you cannot fully afford moves nothing', () => {
   assert.equal(l.balance(BORROWER, 'USD'), before.borrower, 'and nothing reached the poster');
 });
 
+test('a treasury caps the supply, so registering is not a money press', () => {
+  // Before this, every arrival minted its own grant, so ten thousand
+  // registrations were ten billion out of nothing. Measured on the live
+  // endpoint: three registrations added three million to the total.
+  const TREASURY = addressOf('treasury');
+  const opening = { asset: 'USD', amount: 1_000 };
+  const l = new Ledger({ opening, treasury: { address: TREASURY, asset: 'USD', amount: 2_500 } });
+
+  const supply = () => l.audit().get('USD');
+  assert.equal(supply(), 2_500, 'the whole supply exists at genesis');
+
+  for (let i = 0; i < 6; i++) {
+    l.apply({ type: 'join', by: addressOf(`arrival-${i}`), at: T0 + i });
+    assert.equal(supply(), 2_500, 'joining moves the supply, it never adds to it');
+  }
+
+  // Two full grants and a partial one, then the pot is empty.
+  assert.equal(l.balance(addressOf('arrival-0'), 'USD'), 1_000);
+  assert.equal(l.balance(addressOf('arrival-1'), 'USD'), 1_000);
+  assert.equal(l.balance(addressOf('arrival-2'), 'USD'), 500);
+  assert.equal(l.balance(addressOf('arrival-3'), 'USD'), 0, 'an empty treasury grants nothing');
+  assert.equal(l.balance(TREASURY, 'USD'), 0);
+
+  // And it still replays: the treasury is part of the configuration, not the log.
+  const replayed = Ledger.replay(l.log, { opening, treasury: { address: TREASURY, asset: 'USD', amount: 2_500 } });
+  assert.equal(replayed.digest(), l.digest());
+});
+
 test('the clock never runs backwards', () => {
   const l = world();
   l.apply({ type: 'transfer', by: BORROWER, to: LENDER, asset: 'USD', amount: 1, at: T0 + 5 * DAY });
