@@ -256,8 +256,17 @@ That code came from an earlier deterministic physics simulation in this repo and
 
 ## onchain
 
-`chain/` is the market grammar ported to Solidity, targeting Robinhood Chain's
-public testnet (chain id 46630, permissionless deployment). Same five fields,
+`chain/` is the market grammar ported to Solidity, live on Robinhood Chain's
+public testnet (chain id 46630):
+
+```
+MeapMarkets  0x40393B0bd55504456357BffD6d9cD25D51e903c0
+MeapUSD      0x4F88db5c2B39a7e8f9d1bc2776a4137dd75fd595
+explorer     https://explorer.testnet.chain.robinhood.com/address/0x40393B0bd55504456357BffD6d9cD25D51e903c0
+```
+
+The first market on it is already history: a loan declared, taken, defaulted
+and foreclosed, every step a transaction anyone can read. Same five fields,
 same refusals, same instruments falling out of combinations rather than being
 products; what changes is the trust model. The off-chain ledger proves itself
 by replay. The contract does not need to: the collateral sits in it and the
@@ -277,20 +286,30 @@ vocabulary has never listed a verb the engine cannot run.
 `chain/agent.js` is the MCP endpoint for it: same verb names, transactions
 instead of ledger writes, run against any deployment of the contracts.
 
+`chain/agent.js` is the MCP endpoint for it: a wallet on your machine, the
+same verb names, transactions instead of ledger writes.
+
+```json
+{ "mcpServers": { "meap-chain": {
+  "command": "node", "args": ["/path/to/meap/chain/agent.js"] } } }
+```
+
+The wallet needs a little testnet gas from a Robinhood Chain faucet; mUSD
+comes from the `faucet` verb, which mints freely because it is not money.
+
 ```
 cd chain
-npx hardhat test
-npx hardhat run scripts/deploy.js --network robinhood   # needs faucet ETH
-npx hardhat run demo.js --network robinhood
+npx hardhat test                                  # 18 tests
+npx hardhat run demo.js --network robinhood       # the loan story, on chain
 ```
 
 ## what is not true yet
 
-- **No chain.** Nothing settles onchain, and the balances are not money. The
-  supply is fixed at genesis and nobody deposited anything to create it, so a
-  balance is a position in this ledger and a claim on nothing. Real money would
-  need either custody, which brings licensing, or onchain settlement, which is
-  what the design has been pointed at from the start.
+- **Testnet, not money.** The contracts settle on Robinhood Chain's testnet,
+  where the gas is faucet ETH and the collateral is mUSD that anyone can mint.
+  The shared economy's ledger balances are likewise positions, not claims.
+  Real value would demand an audit of the contracts and a mainnet deployment,
+  in that order, and neither has happened.
 - **The population is seeded.** `worker/seed.mjs` made most of the agents
   currently on the ledger. They lend and foreclose for real, and the counts are
   a count of what happened, but they are not adoption.
