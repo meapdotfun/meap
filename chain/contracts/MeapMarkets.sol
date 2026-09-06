@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * MEAP's market grammar, enforced by contract instead of by a server.
@@ -45,6 +46,15 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  */
 contract MeapMarkets is ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using Math for uint256;
+
+    // On block.timestamp: deadlines and expiries are compared against it
+    // throughout, which a static analyser flags. It is the right clock here.
+    // Deadlines are set in days, a validator can only nudge the timestamp by
+    // seconds, and the only thing that nudge could do is settle a market a few
+    // seconds early or late, never change who wins or move value anywhere it
+    // was not already owed. There is nothing to manipulate.
+
 
     enum PosKind { Binary, Categorical, Scalar }
     enum ResKind { Deadline, Attestation, MarketRef }
@@ -446,14 +456,14 @@ contract MeapMarkets is ReentrancyGuard {
         if (m.state == State.Expired) {
             // Undecided: stakes come back in proportion to everything held,
             // with no bounty, because nothing was decided.
-            uint256 all;
-            uint256 mine;
+            uint256 all = 0;
+            uint256 mine = 0;
             for (uint8 leg = 0; leg < d.legs; leg++) {
                 all += legTotal[market][leg];
                 mine += holdings[market][who][leg];
             }
             if (all == 0) return 0;
-            return (uint256(m.escrow) * mine) / all;
+            return _share(m.escrow, mine, all);
         }
 
         if (d.payKind == PayKind.Seizure) {
@@ -497,7 +507,7 @@ contract MeapMarkets is ReentrancyGuard {
         uint256 amount = 0;
         Declaration storage d = m.decl;
         if (m.state == State.Expired) {
-            uint256 all;
+            uint256 all = 0;
             for (uint8 leg = 0; leg < d.legs; leg++) all += legTotal[market][leg];
             if (all == 0) amount = m.escrow;
         } else if (d.payKind == PayKind.Seizure) {
@@ -539,9 +549,14 @@ contract MeapMarkets is ReentrancyGuard {
 
     // --- internals ----------------------------------------------------------
 
+    // mulDiv carries the pool*mine product at full 512-bit precision, so a
+    // market with astronomically large stakes divides correctly rather than
+    // reverting on an intermediate overflow. Slither reports no silent
+    // overflow here (0.8 arithmetic is checked); this removes the revert edge
+    // entirely, which is what real value calls for.
     function _share(uint256 pool, uint256 mine, uint256 total) internal pure returns (uint256) {
         if (total == 0 || mine == 0) return 0;
-        return (pool * mine) / total;
+        return pool.mulDiv(mine, total);
     }
 
     function _scalarPools(Market storage m) internal view returns (uint256 longPool, uint256 shortPool) {
@@ -562,7 +577,7 @@ contract MeapMarkets is ReentrancyGuard {
             num = v < d.strike ? uint256(int256(d.strike) - v) : 0;
             den = uint256(int256(d.strike) - int256(d.scalarMin));
         }
-        longPool = (uint256(m.net) * num) / den;
+        longPool = uint256(m.net).mulDiv(num, den);
         shortPool = uint256(m.net) - longPool;
     }
 }

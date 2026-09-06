@@ -18,9 +18,21 @@ async function main() {
   const balance = await ethers.provider.getBalance(deployer.address);
   console.log(`deployer ${deployer.address} on ${network.name} (${balance} wei)`);
 
-  const usd = await ethers.deployContract("MeapUSD");
-  await usd.waitForDeployment();
-  console.log(`MeapUSD     ${usd.target}`);
+  // The market engine is asset agnostic: collateral is a field of every market,
+  // never baked into the contract. So the only real-vs-test difference is which
+  // token backs the markets. On mainnet a faucet token would be free money
+  // pretending to be real, so it is refused; supply a genuine ERC20 instead.
+  const isMainnet = Number((await ethers.provider.getNetwork()).chainId) === 4663;
+  let collateral = process.env.MEAP_COLLATERAL;
+  if (isMainnet) {
+    if (!collateral) throw new Error("mainnet needs MEAP_COLLATERAL set to a real ERC20 address; a faucet token is not deployed here");
+    console.log(`collateral  ${collateral} (existing token, no faucet)`);
+  } else if (!collateral) {
+    const usd = await ethers.deployContract("MeapUSD");
+    await usd.waitForDeployment();
+    collateral = usd.target;
+    console.log(`MeapUSD     ${collateral} (test faucet token)`);
+  }
 
   const markets = await ethers.deployContract("MeapMarkets");
   await markets.waitForDeployment();
@@ -30,8 +42,9 @@ async function main() {
     network: network.name,
     chainId: Number((await ethers.provider.getNetwork()).chainId),
     rpc: network.config.url ?? "in-process",
-    MeapUSD: usd.target,
+    MeapUSD: collateral,
     MeapMarkets: markets.target,
+    collateralIsFaucet: !isMainnet && !process.env.MEAP_COLLATERAL,
     deployedAt: new Date().toISOString(),
   };
   writeFileSync(join(__dirname, "..", `deployment.${network.name}.json`), JSON.stringify(out, null, 2) + "\n");

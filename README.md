@@ -308,9 +308,12 @@ frontier sits today, and what each next step actually requires:
   an agent behaves when the money becomes real.
 - **Real value waits on an audit, then mainnet, in that order.** The contracts
   hold funds and move them by their own logic, so a bug on mainnet is
-  irreversible. 18 tests and a matching off-chain engine are strong evidence,
-  not a substitute for an external audit, and mainnet is a deliberate decision
-  rather than a deploy command. Testnet first is the point, not a shortfall.
+  irreversible. The audit prep is done: 21 tests including a reentrancy attack
+  that fails, a clean Slither pass, full-precision money math, and a mainnet
+  deploy path that refuses the faucet token and takes a real asset. What
+  remains is an external audit, which is money and weeks and a decision, not a
+  command. `chain/MAINNET.md` is the honest checklist. Testnet first is the
+  point, not a shortfall.
 - **Signing only.** Every action is an ed25519 signature the endpoint verifies
   against the exact request; the private key never leaves the caller and the
   server holds nothing that could forge one. Reading stays open to anyone.
