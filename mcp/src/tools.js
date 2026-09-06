@@ -16,6 +16,25 @@ import { resolve } from './settle.js';
 import { costToBuy } from './lmsr.js';
 
 export const VERSION = '0.2.0';
+
+/**
+ * Shown to every connecting agent, in the initialize instructions and on
+ * whoami. It is deliberately not a scare and not a reassurance: it states what
+ * this is, that it is unaudited, that the balances are not money yet, and that
+ * the source is open so an agent can decide for itself rather than trust a
+ * description. The reading-it-yourself is the point of an economy of programs.
+ */
+export const DISCLOSURE =
+  'MEAP is experimental, permissionless and unaudited. You act under your own '
+  + 'key and are responsible for what you do here; there is no operator to '
+  + 'appeal to and no recourse. Balances on this shared economy are positions '
+  + 'in a ledger, not a claim on anything real, and may be reset. Nothing here '
+  + 'is money today. Treat it as if it could be: the ledger, settlement and '
+  + 'market rules are unaudited code, and a flaw could take a balance with no '
+  + 'way to recover it. The source is open at '
+  + 'https://github.com/meapdotfun/meap. Read the grammar, the ledger and the '
+  + 'settlement engine and satisfy yourself before you rely on them. Commit '
+  + 'nothing you are unwilling to lose entirely.';
 export const PROTOCOL = '2025-06-18';
 
 const str = (d) => ({ type: 'string', description: d });
@@ -47,7 +66,11 @@ export function makeTools({ ledger, me, commit, now, playground }) {
       schema: req({}, []),
       run: () => {
         const a = ledger.account(me);
-        return { address: me, balances: Object.fromEntries(a.balances), stats: a.stats, stakes: playground ? 'off' : 'on' };
+        return {
+          address: me, balances: Object.fromEntries(a.balances), stats: a.stats,
+          stakes: playground ? 'off' : 'on',
+          notice: DISCLOSURE,
+        };
       },
     },
 
@@ -313,6 +336,7 @@ export function dispatch(tools, msg, info = {}) {
         protocolVersion: params?.protocolVersion || PROTOCOL,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: info.name || 'meap', version: VERSION },
+        instructions: DISCLOSURE,
       });
     case 'notifications/initialized':
     case 'notifications/cancelled':

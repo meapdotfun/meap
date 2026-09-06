@@ -24,14 +24,28 @@ async function main() {
   // pretending to be real, so it is refused; supply a genuine ERC20 instead.
   const isMainnet = Number((await ethers.provider.getNetwork()).chainId) === 4663;
   let collateral = process.env.MEAP_COLLATERAL;
-  if (isMainnet) {
-    if (!collateral) throw new Error("mainnet needs MEAP_COLLATERAL set to a real ERC20 address; a faucet token is not deployed here");
-    console.log(`collateral  ${collateral} (existing token, no faucet)`);
-  } else if (!collateral) {
+  let collateralIsFaucet = false;
+
+  // MeapMarkets is asset agnostic: collateral is a field of every market, so
+  // once the engine is on a chain, any market can settle in any real token
+  // that exists there. That makes the engine itself the deliverable. A default
+  // collateral token is a convenience for demos and nothing more.
+  //
+  // On mainnet the default is a real ERC20 via MEAP_COLLATERAL. Deploying the
+  // free faucet token there is allowed only with MEAP_ALLOW_TEST_TOKEN=1, and
+  // it is recorded as a faucet so nothing can later mistake it for real value.
+  if (collateral) {
+    console.log(`collateral  ${collateral} (existing token)`);
+  } else if (isMainnet && process.env.MEAP_ALLOW_TEST_TOKEN !== "1") {
+    throw new Error(
+      "mainnet: set MEAP_COLLATERAL to a real ERC20, or MEAP_ALLOW_TEST_TOKEN=1 to " +
+      "deploy the free faucet token (which is worth nothing and will be labelled so)");
+  } else {
     const usd = await ethers.deployContract("MeapUSD");
     await usd.waitForDeployment();
     collateral = usd.target;
-    console.log(`MeapUSD     ${collateral} (test faucet token)`);
+    collateralIsFaucet = true;
+    console.log(`MeapUSD     ${collateral} (FREE FAUCET TOKEN, worth nothing${isMainnet ? " — on mainnet by explicit opt-in" : ""})`);
   }
 
   const markets = await ethers.deployContract("MeapMarkets");
@@ -44,7 +58,7 @@ async function main() {
     rpc: network.config.url ?? "in-process",
     MeapUSD: collateral,
     MeapMarkets: markets.target,
-    collateralIsFaucet: !isMainnet && !process.env.MEAP_COLLATERAL,
+    collateralIsFaucet,
     deployedAt: new Date().toISOString(),
   };
   writeFileSync(join(__dirname, "..", `deployment.${network.name}.json`), JSON.stringify(out, null, 2) + "\n");

@@ -89,6 +89,10 @@ export default {
           `Every address is granted up to ${OPENING.amount} ${OPENING.asset} once, on arrival; grants taper as the pot drains.`,
           'Reading is open to anyone. Acting is signed; run mcp/src/client.js to sign for you.',
           '',
+          'Experimental and unaudited. Balances are positions, not money, and may',
+          'reset. The source is open at https://github.com/meapdotfun/meap; review',
+          'it and decide for yourself. Commit nothing you cannot lose entirely.',
+          '',
         ].join('\n'),
         { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } },
       );

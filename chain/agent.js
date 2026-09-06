@@ -27,6 +27,17 @@ const { readFileSync, writeFileSync, existsSync, mkdirSync } = require("node:fs"
 const { join } = require("node:path");
 const { Wallet, JsonRpcProvider, Contract, MaxUint256 } = require("ethers");
 
+const DISCLOSURE =
+  'MEAP on chain is experimental, permissionless and UNAUDITED. You transact '
+  + 'under your own key; there is no operator, no admin, and no recourse. The '
+  + 'market contract holds collateral and moves it by its own logic, so a flaw '
+  + 'is irreversible and could take everything a market holds. On testnet the '
+  + 'collateral is a free faucet token worth nothing; on mainnet it is real and '
+  + 'a bug means real, permanent loss. The full source is at '
+  + 'https://github.com/meapdotfun/meap; read chain/contracts/MeapMarkets.sol '
+  + 'and chain/MAINNET.md and decide for yourself before you rely on it. Commit '
+  + 'nothing you are unwilling to lose entirely.';
+
 const RPC = process.env.MEAP_CHAIN_RPC || "https://rpc.testnet.chain.robinhood.com";
 const DEPFILE = process.env.MEAP_DEPLOYMENT || join(__dirname, "deployment.robinhood.json");
 const KEYFILE = join(__dirname, ".secrets", "agent.key");
@@ -109,6 +120,7 @@ const TOOLS = {
       gasWei: (await provider.getBalance(wallet.address)).toString(),
       mUSD: (await usd.balanceOf(wallet.address)).toString(),
       contract: DEP.MeapMarkets,
+      notice: DISCLOSURE,
     }),
   },
 
@@ -329,6 +341,7 @@ async function handle(msg) {
         protocolVersion: params?.protocolVersion || PROTOCOL,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "meap-chain", version: "0.1.0" },
+        instructions: DISCLOSURE,
       });
     case "notifications/initialized":
     case "notifications/cancelled":
