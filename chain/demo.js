@@ -31,7 +31,7 @@ async function main() {
   console.log(`lender   ${lender.address} (throwaway, funded for gas)`);
 
   // Gas for the lender.
-  await (await borrower.sendTransaction({ to: lender.address, value: ethers.parseEther("0.002") })).wait();
+  await (await borrower.sendTransaction({ to: lender.address, value: ethers.parseEther("0.0008") })).wait();
 
   const usd = await ethers.getContractAt("MeapUSD", dep.MeapUSD);
   const mkts = await ethers.getContractAt("MeapMarkets", dep.MeapMarkets);

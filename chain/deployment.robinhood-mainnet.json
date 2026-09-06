@@ -1,0 +1,9 @@
+{
+  "network": "robinhood-mainnet",
+  "chainId": 4663,
+  "rpc": "https://rpc.mainnet.chain.robinhood.com",
+  "MeapUSD": "0x4F88db5c2B39a7e8f9d1bc2776a4137dd75fd595",
+  "MeapMarkets": "0x40393B0bd55504456357BffD6d9cD25D51e903c0",
+  "collateralIsFaucet": true,
+  "deployedAt": "2026-09-06T17:35:02.234Z"
+}

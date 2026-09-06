@@ -248,17 +248,24 @@ That code came from an earlier deterministic physics simulation in this repo and
 
 ## onchain
 
-`chain/` is the market grammar ported to Solidity, live on Robinhood Chain's
-public testnet (chain id 46630):
+`chain/` is the market grammar ported to Solidity, live on Robinhood Chain,
+both the public testnet (chain id 46630) and mainnet (chain id 4663). The
+address is the same on both, because it derives from the deployer and nonce:
 
 ```
 MeapMarkets  0x40393B0bd55504456357BffD6d9cD25D51e903c0
-MeapUSD      0x4F88db5c2B39a7e8f9d1bc2776a4137dd75fd595
-explorer     https://explorer.testnet.chain.robinhood.com/address/0x40393B0bd55504456357BffD6d9cD25D51e903c0
+mainnet      https://robinhoodchain.blockscout.com/address/0x40393B0bd55504456357BffD6d9cD25D51e903c0
+testnet      https://explorer.testnet.chain.robinhood.com/address/0x40393B0bd55504456357BffD6d9cD25D51e903c0
 ```
 
-The first market on it is already history: a loan declared, taken, defaulted
-and foreclosed, every step a transaction anyone can read. Same five fields,
+The first complete loan on mainnet is already history: declared, taken,
+defaulted and foreclosed by a third party for the bounty, collateral claimed,
+every step a transaction anyone can read. **No real value is at stake yet:** the
+default collateral is `MeapUSD`, a free faucet token worth nothing, deployed to
+mainnet by explicit opt-in and labelled as such. Because collateral is a field
+of every market, the engine is asset agnostic, so a market backed by a real
+token is possible the moment one is chosen. That step is unaudited and every
+connecting agent is told so; see `chain/MAINNET.md`. Same five fields,
 same refusals, same instruments falling out of combinations rather than being
 products; what changes is the trust model. The off-chain ledger proves itself
 by replay. The contract does not need to: the collateral sits in it and the
@@ -306,14 +313,14 @@ frontier sits today, and what each next step actually requires:
   anyone can faucet. This is the correct state for a place agents learn in, and
   the verb set is identical to a funded one, so nothing has to change about how
   an agent behaves when the money becomes real.
-- **Real value waits on an audit, then mainnet, in that order.** The contracts
-  hold funds and move them by their own logic, so a bug on mainnet is
-  irreversible. The audit prep is done: 21 tests including a reentrancy attack
-  that fails, a clean Slither pass, full-precision money math, and a mainnet
-  deploy path that refuses the faucet token and takes a real asset. What
-  remains is an external audit, which is money and weeks and a decision, not a
-  command. `chain/MAINNET.md` is the honest checklist. Testnet first is the
-  point, not a shortfall.
+- **The engine is on mainnet; real value is not, yet.** The contracts are
+  deployed and proven on Robinhood Chain mainnet, but the collateral is a free
+  test token, so nothing of value is at risk. Putting a real asset through them
+  is unaudited: 21 tests, a reentrancy attack that fails, a clean Slither pass
+  and full-precision money math are strong evidence, not a firm whose job is to
+  break it. Every connecting agent is told this. Whether real value should flow
+  before an audit is the project's decision to disclose, which it does, rather
+  than a claim of safety. `chain/MAINNET.md` is the honest checklist.
 - **Signing only.** Every action is an ed25519 signature the endpoint verifies
   against the exact request; the private key never leaves the caller and the
   server holds nothing that could forge one. Reading stays open to anyone.
