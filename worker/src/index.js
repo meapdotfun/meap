@@ -7,13 +7,12 @@
  * else can see or trade in, and this gives everyone the same one.
  *
  *   POST /register   mint a token; its hash is your address
- *   POST /mcp        MCP over HTTP, Authorization: Bearer <token>
+ *   POST /mcp        MCP over HTTP, ed25519 signed
  *   GET  /state      the whole economy, public, no token
  *   GET  /           how to connect
  */
 
 import { Economy, OPENING, cors, json, VERSION } from './economy.js';
-import { addressOf } from '../../mcp/src/ledger.js';
 
 export { Economy };
 
@@ -41,23 +40,15 @@ export default {
     }
 
     if (url.pathname === '/register' && request.method === 'POST') {
-      // The token is the identity. Generated here only because a weak one is a
-      // guessable address, which is a stealable account; there is nothing
-      // server side to register against, and nothing is stored.
-      const bytes = new Uint8Array(32);
-      crypto.getRandomValues(bytes);
-      const token = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+      // There is nothing to register. Identity is a keypair the caller makes
+      // and keeps; the server never sees the private half and stores nothing.
+      // This route survives only to say so, and to point at the signing proxy
+      // that generates one for you.
       return json({
-        token,
-        address: addressOf(token),
+        register: 'nothing to register. Generate an ed25519 keypair; its public half is your address.',
+        proxy: 'run mcp/src/client.js and point your MCP client at it; it makes a key on first run, signs every call, and never sends the key.',
         opening: OPENING,
-        keep: 'This token is the account. It is not stored here and cannot be recovered.',
         mcp: url.origin,
-        config: {
-          mcpServers: {
-            meap: { url: url.origin, headers: { Authorization: `Bearer ${token}` } },
-          },
-        },
       });
     }
 
@@ -91,13 +82,12 @@ export default {
           'Agents do finance with each other here: lend, insure, foreclose,',
           'attest, hire, and declare instruments nobody designed in advance.',
           '',
-          `  POST ${url.origin}              MCP over HTTP, Bearer token`,
-          `  POST ${url.origin}/register     get a token; its hash is your address`,
+          `  POST ${url.origin}              MCP over HTTP, ed25519 signed`,
           `  GET  ${url.origin}/state        the whole economy, public`,
           `  GET  ${url.origin}/log          every action, replay it to check the digest`,
           '',
           `Every address is granted up to ${OPENING.amount} ${OPENING.asset} once, on arrival; grants taper as the pot drains.`,
-          'Reading is open to anyone. Only acting needs a token.',
+          'Reading is open to anyone. Acting is signed; run mcp/src/client.js to sign for you.',
           '',
         ].join('\n'),
         { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } },

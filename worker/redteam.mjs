@@ -23,6 +23,8 @@
  *   node worker/redteam.mjs https://mcp.meap.fun
  */
 
+import { newAgent } from './lib/signing-agent.mjs';
+
 const BASE = (process.argv[2] || 'http://127.0.0.1:8788').replace(/\/+$/, '');
 
 let failures = 0;
@@ -33,21 +35,7 @@ const ok = (name, cond, detail = '') => {
 
 const state = async () => (await fetch(`${BASE}/state`)).json();
 
-async function call(token, name, args) {
-  const r = await fetch(`${BASE}/mcp`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
-  });
-  const body = await r.json().catch(() => ({}));
-  return {
-    status: r.status,
-    isError: !!body.result?.isError || !!body.error,
-    text: body.result?.content?.[0]?.text ?? body.error?.message ?? '',
-  };
-}
-
-const register = async () => (await fetch(`${BASE}/register`, { method: 'POST' })).json();
+const register = async () => newAgent(BASE);
 
 console.log(`red team vs ${BASE}\n`);
 const before = await state();
@@ -58,36 +46,54 @@ const treasury = before.agents.reduce((a, b) =>
   ((a.balances.USD ?? 0) > (b.balances.USD ?? 0) ? a : b));
 console.log(`supply ${supply}, treasury holds ${treasuryHeld} at ${treasury.address}\n`);
 
-// --- 1. become the treasury --------------------------------------------------
+// --- 1. forge a signature or a raw request -----------------------------------
 
 {
-  const r = await call('meap:treasury:v1', 'whoami', {});
-  ok('the old treasury label is refused outright', r.status === 401, r.text.slice(0, 60));
+  // A request with a public key but a signature that does not cover it.
+  const victim = await newAgent(BASE);
+  const attacker = await newAgent(BASE);
+  const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+  const stolen = await fetch(`${BASE}/mcp`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-meap-key': victim.publicKey,           // claim to be the victim
+      'x-meap-time': String(Date.now()),
+      'x-meap-nonce': 'deadbeef'.repeat(4),
+      'x-meap-sig': 'aa'.repeat(64),            // but a bogus signature
+    },
+    body,
+  });
+  ok('a forged signature is refused', stolen.status === 401, `status ${stolen.status}`);
 
-  // Padded guesses clear the length floor but must land on fresh addresses.
-  for (const guess of ['system:treasury'.padEnd(32, 'x'), 'meap:treasury:v1:aaaaaaaaaaaaaaaa', 'treasury'.repeat(4)]) {
-    const w = await call(guess, 'whoami', {});
-    const addr = w.isError ? null : JSON.parse(w.text).address;
-    ok(`token ${JSON.stringify(guess.slice(0, 20))}... is not the treasury`, addr !== treasury.address, addr ?? w.text.slice(0, 40));
-  }
+  // A raw bearer header, from the removed scheme, buys nothing.
+  const bearer = await fetch(`${BASE}/mcp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + 'f'.repeat(64) },
+    body,
+  });
+  const bj = await bearer.json().catch(() => ({}));
+  const acted = bj.result && !bj.result.isError;
+  ok('a bearer token no longer acts', !acted, 'bearer is gone');
 }
 
 // --- 2. steal from it anyway -------------------------------------------------
 
 {
-  const me = await register();
-  const r = await call(me.token, 'pay', { to: me.address, asset: 'USD', amount: 1 });
+  const me = await newAgent(BASE);
+  await me.call('whoami', {});                 // join, take the grant
+  const r = await me.call('pay', { to: me.address, asset: 'USD', amount: 1 });
   ok('paying yourself is refused', r.isError, r.text.slice(0, 40));
 
-  const rich = await call(me.token, 'pay', { to: treasury.address, asset: 'USD', amount: 10 ** 10 });
+  const rich = await me.call('pay', { to: treasury.address, asset: 'USD', amount: 10 ** 10 });
   ok('overdrawing is refused', rich.isError, rich.text.slice(0, 50));
 
   for (const amount of [-5, 0, 0.5, 1e18]) {
-    const bad = await call(me.token, 'pay', { to: treasury.address, asset: 'USD', amount });
+    const bad = await me.call('pay', { to: treasury.address, asset: 'USD', amount });
     ok(`amount ${amount} is refused`, bad.isError, bad.text.slice(0, 40));
   }
 
-  const mint = await call(me.token, 'fund', { asset: 'USD', amount: 10 ** 9 });
+  const mint = await me.call('fund', { asset: 'USD', amount: 10 ** 9 });
   ok('minting is refused on the shared ledger', mint.isError, mint.text.slice(0, 50));
 }
 
@@ -96,9 +102,9 @@ console.log(`supply ${supply}, treasury holds ${treasuryHeld} at ${treasury.addr
 {
   const grants = [];
   for (let i = 0; i < 5; i++) {
-    const s = await register();
-    const w = await call(s.token, 'whoami', {});
-    grants.push(JSON.parse(w.text).balances.USD ?? 0);
+    const a = await newAgent(BASE);
+    const w = await a.call('whoami', {});
+    grants.push(w.json.balances.USD ?? 0);
   }
   const capped = grants.every((g) => g <= before.opening.amount);
   const monotone = grants.every((g, i) => i === 0 || g <= grants[i - 1]);

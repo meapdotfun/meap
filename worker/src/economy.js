@@ -14,15 +14,15 @@
  * ever touched a clock, a random number, or a Node API. That was worth the
  * discipline: the same code decides the rules locally and in production.
  *
- * Identity is the bearer token, hashed. `addressOf(token)` derives the address,
- * so the server stores no secret and holds no key: it only ever sees what the
- * caller presents. Losing the token loses the account, exactly as losing a
- * private key would. This is not signing, and the honest limit is that the
- * server sees the token on every call and could act as you; a real deployment
- * wants per request signatures, which stock MCP clients cannot yet produce.
+ * Identity is an ed25519 signature. The caller holds the private key, the
+ * server sees only a public key and a signature over the exact request bytes,
+ * and it stores no secret and holds nothing that could forge a request. Losing
+ * the key loses the account, exactly as it should. Stock MCP clients cannot
+ * sign per request, so mcp/src/client.js carries the key locally and signs on
+ * their behalf; the endpoint never sees it.
  */
 
-import { Ledger, addressOf, addressOfKey, addressOfSystem } from '../../mcp/src/ledger.js';
+import { Ledger, addressOfKey, addressOfSystem } from '../../mcp/src/ledger.js';
 import { verifyRequest, SKEW_MS } from '../../mcp/src/sign.js';
 import { makeTools, dispatch, READS, VERSION } from '../../mcp/src/tools.js';
 
@@ -209,27 +209,18 @@ export class Economy {
     // whitespace and key order and verify against nothing.
     const raw = await request.text();
 
-    // Two ways to be somebody, and they are not equal.
+    // Identity is a signature and nothing else. The private key never leaves
+    // the caller, the server sees only a public key and a signature over the
+    // exact bytes it was sent, and it holds nothing that could forge a request
+    // in anyone's name. There is no weaker option: an earlier bearer token was
+    // removed because the server saw it on every call and could therefore act
+    // as its holder, which is the one thing a non-custodial endpoint cannot do.
     //
-    // A signature is the real one: the private key never leaves the caller,
-    // this server sees only a public key and a signature over what it was
-    // sent, and it holds nothing that could forge a request in your name.
-    //
-    // A bearer token still works because it is what the first version shipped
-    // with and it is fine for a playground. It is strictly weaker, and the
-    // difference is not subtle: whoever sees the token can act as you, and
-    // this server sees it on every call.
+    // A request with no key is still welcome; it just cannot act. Reading is
+    // open to anyone, and the wall is the first verb that would change
+    // something.
     let me = null;
-    let how = null;
-    let token = null;
     const key = request.headers.get('x-meap-key');
-    if (!key) {
-      try {
-        token = bearer(request);
-      } catch (e) {
-        return json({ jsonrpc: '2.0', id: null, error: { code: -32003, message: e.message } }, 401);
-      }
-    }
     if (key) {
       try {
         await verifyRequest({
@@ -247,12 +238,8 @@ export class Economy {
         return json({ jsonrpc: '2.0', id: null, error: { code: -32002, message: `signature refused: ${e.message}` } }, 401);
       }
       me = addressOfKey(key);
-      how = 'signature';
-    } else if (token) {
-      me = addressOf(token);
-      how = 'bearer';
+      await this.ensure(me);
     }
-    if (me) await this.ensure(me);
 
     let body;
     try {
@@ -319,21 +306,10 @@ export class Economy {
 // --- helpers ----------------------------------------------------------------
 
 const NEEDS_TOKEN =
-  'this verb acts on the ledger and needs an identity. POST /register to get a token, '
-  + 'then send it as `Authorization: Bearer <token>`. Reading needs no token.';
-
-function bearer(request) {
-  const h = request.headers.get('authorization') || '';
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  const t = m ? m[1].trim() : null;
-  // A short token is a guessable one, and a guessable token is somebody's
-  // address. /register issues 64 hex characters; anything under 32 is someone
-  // trying labels, which is exactly the treasury bug generalised.
-  if (t && t.length < 32) throw new BadToken('bearer tokens are at least 32 characters; POST /register issues one');
-  return t;
-}
-
-class BadToken extends Error {}
+  'this verb acts on the ledger and needs a signature. Generate an ed25519 key, '
+  + 'send its public half as `x-meap-key` and a signature over the request in '
+  + '`x-meap-sig`; the signing proxy in mcp/src/client.js does this for you. '
+  + 'Reading needs no key.';
 
 export function cors() {
   return {

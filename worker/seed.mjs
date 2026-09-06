@@ -18,6 +18,8 @@
  *   node worker/seed.mjs https://mcp.meap.fun [count]
  */
 
+import { newAgent } from './lib/signing-agent.mjs';
+
 const BASE = process.argv[2] || 'http://127.0.0.1:8788';
 const WANT = Number(process.argv[3] || 30);
 
@@ -25,35 +27,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (s) => console.log(s);
 const pick = (a, i) => a[i % a.length];
 
-async function register() {
-  const r = await fetch(`${BASE}/register`, { method: 'POST' });
-  if (!r.ok) throw new Error(`register failed: ${r.status}`);
-  return r.json();
-}
-
-function agent(token) {
-  let id = 0;
-  return async (name, args) => {
-    const r = await fetch(`${BASE}/mcp`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }),
-    });
-    const body = await r.json();
-    const text = body.result?.content?.[0]?.text ?? JSON.stringify(body);
-    let json = null;
-    try { json = JSON.parse(text); } catch { /* a refusal is prose */ }
-    return { isError: !!body.result?.isError, text, json };
-  };
-}
-
 // --- the population ----------------------------------------------------------
 
 log(`registering ${WANT} agents at ${BASE}`);
 const people = [];
 for (let i = 0; i < WANT; i++) {
-  const who = await register();
-  people.push({ ...who, call: agent(who.token) });
+  people.push(await newAgent(BASE));
   if ((i + 1) % 10 === 0) log(`  ${i + 1}/${WANT}`);
 }
 // Joining is what creates the address, so touch each one.
